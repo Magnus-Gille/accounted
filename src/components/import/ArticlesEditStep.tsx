@@ -93,11 +93,13 @@ export default function ArticlesEditStep({
 
   const handlePriceChange = useCallback((id: string, raw: string) => {
     const n = parseFloat(raw.replace(',', '.'))
-    const price = Number.isFinite(n) ? n : 0
+    // An emptied/unparseable field means "not specified", never 0.
+    const price = Number.isFinite(n) ? n : null
+    const negative = price !== null && price < 0
     updateRow(id, {
       price_excl_vat: price,
-      is_valid: price >= 0,
-      validation_errors: price < 0 ? ['Priset kan inte vara negativt'] : [],
+      is_valid: !negative,
+      validation_errors: negative ? ['Priset kan inte vara negativt'] : [],
     })
   }, [updateRow])
 
@@ -216,7 +218,7 @@ export default function ArticlesEditStep({
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <Input
-                        value={String(row.price_excl_vat)}
+                        value={row.price_excl_vat == null ? '' : String(row.price_excl_vat)}
                         inputMode="decimal"
                         onChange={(e) => handlePriceChange(row.id, e.target.value)}
                         className="h-8 text-right tabular-nums"

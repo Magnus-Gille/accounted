@@ -1257,7 +1257,7 @@ async function commitCreateArticle(
       name: validated.name,
       name_en: validated.name_en ?? null,
       type: validated.type,
-      unit: validated.unit ?? 'st',
+      unit: validated.unit ?? null,
       price_excl_vat: validated.price_excl_vat,
       currency: validated.currency ?? 'SEK',
       vat_rate: validated.vat_rate,

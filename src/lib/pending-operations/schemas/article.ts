@@ -60,7 +60,8 @@ export const CreateArticleParamsSchema = z.object({
   name: trimmedName,
   type: z.enum(['vara', 'tjanst']).default('tjanst'),
   unit: optString(32),
-  price_excl_vat: z.number().nonnegative(),
+  // null = "not specified" (preserved, not coerced to 0).
+  price_excl_vat: z.number().nonnegative().nullable(),
   currency: currencyCode,
   vat_rate: vatRatePercent.default(25),
   revenue_account: invoicePostingAccount.nullable().optional(),
@@ -77,7 +78,7 @@ export const UpdateArticleParamsSchema = z.object({
   name: trimmedName.optional(),
   type: z.enum(['vara', 'tjanst']).optional(),
   unit: optString(32),
-  price_excl_vat: z.number().nonnegative().optional(),
+  price_excl_vat: z.number().nonnegative().nullable().optional(),
   currency: currencyCode,
   vat_rate: vatRatePercent.optional(),
   revenue_account: invoicePostingAccount.nullable().optional(),

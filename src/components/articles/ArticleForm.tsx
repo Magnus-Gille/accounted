@@ -141,8 +141,14 @@ export default function ArticleForm({
         name: z.string().min(1, t('name_required')),
         name_en: z.string().optional(),
         type: z.enum(['vara', 'tjanst']),
-        unit: z.string().trim().min(1, t('unit_required')).max(UNIT_MAX_LENGTH, t('unit_too_long')),
-        price_excl_vat: z.number({ message: t('price_required') }).nonnegative(t('price_required')),
+        // Empty = "not specified" (stored as null); no hidden 'st' default.
+        unit: z.string().trim().max(UNIT_MAX_LENGTH, t('unit_too_long')),
+        // An empty field (NaN from valueAsNumber) = "not specified" (null), not 0.
+        price_excl_vat: z
+          .number({ message: t('price_required') })
+          .nonnegative(t('price_required'))
+          .nullable()
+          .or(z.nan().transform(() => null)),
         vat_rate: z.union([z.literal(25), z.literal(12), z.literal(6), z.literal(0)]),
         // ISO 4217 alpha-3; the authoritative allow-list is the currencies
         // table (the DB FK rejects unknown codes).
@@ -176,8 +182,8 @@ export default function ArticleForm({
       name: initialData?.name || '',
       name_en: initialData?.name_en || '',
       type: initialData?.type || 'tjanst',
-      unit: initialData?.unit || 'st',
-      price_excl_vat: initialData?.price_excl_vat ?? 0,
+      unit: initialData?.unit ?? '',
+      price_excl_vat: initialData?.price_excl_vat ?? null,
       vat_rate: (initialData?.vat_rate as FormData['vat_rate']) ?? 25,
       currency: initialData?.currency ?? 'SEK',
       revenue_account: initialData?.revenue_account || '',
@@ -211,7 +217,7 @@ export default function ArticleForm({
   // The summary strip: what this article becomes as a line on an invoice.
   // Display only, so it never posts anything, but it is the reason currency is
   // impossible to miss here.
-  const price = Number.isFinite(watchedPrice) ? Number(watchedPrice) : 0
+  const price = typeof watchedPrice === 'number' && Number.isFinite(watchedPrice) ? watchedPrice : 0
   const effectiveVat = vatRegistered ? Number(watchedVat) || 0 : 0
   const vatAmount = round2((price * effectiveVat) / 100)
   const totalInclVat = round2(price + vatAmount)
@@ -230,8 +236,8 @@ export default function ArticleForm({
       name: data.name,
       name_en: data.name_en || null,
       type: data.type,
-      unit: data.unit,
-      price_excl_vat: data.price_excl_vat,
+      unit: data.unit.trim() || null,
+      price_excl_vat: data.price_excl_vat ?? null,
       vat_rate: vatRegistered ? data.vat_rate : 0,
       currency: data.currency,
       revenue_account: data.revenue_account || null,

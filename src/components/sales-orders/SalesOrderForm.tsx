@@ -246,8 +246,9 @@ export default function SalesOrderForm({ mode, initial }: SalesOrderFormProps) {
     updateLine(key, {
       article_id: article.id,
       description: article.name,
-      unit: article.unit,
-      unit_price: String(article.price_excl_vat),
+      // Not specified stays empty (no 'st' / '0' default); the user fills it in.
+      unit: article.unit ?? '',
+      unit_price: article.price_excl_vat == null ? '' : String(article.price_excl_vat),
       vat_rate: rateAllowed ? article.vat_rate : vatPlan.defaultRate,
       revenue_account: article.revenue_account,
     })

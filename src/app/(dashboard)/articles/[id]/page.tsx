@@ -284,7 +284,7 @@ export default function ArticleDetailPage({
         <DetailSection kicker={t('section_pricing')}>
           <DefRow label={t('label_price')}>
             <span className="tabular-nums">
-              {formatCurrency(article.price_excl_vat, article.currency)}
+              {article.price_excl_vat == null ? '' : formatCurrency(article.price_excl_vat, article.currency)}
             </span>
           </DefRow>
           <DefRow label={t('label_vat')}>

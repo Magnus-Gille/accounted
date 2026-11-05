@@ -112,6 +112,36 @@ describe('gnubok_create_invoice: article_id on items', () => {
     expect(result.preview.total).toBe(4500)
   })
 
+  it('requires an explicit unit_price when the article has no price (null, not 0)', async () => {
+    const { supabase, enqueue } = createQueuedMockSupabase()
+    enqueue({ data: CUSTOMER, error: null })
+    enqueue({ data: [{ ...ARTICLE, price_excl_vat: null }], error: null })
+
+    await expect(
+      createInvoice.execute(
+        { customer_id: 'cust-1', invoice_date: '2026-05-12', items: [{ article_id: ARTICLE_ID, quantity: 1 }] },
+        'company-1',
+        'user-1',
+        supabase as never,
+      ),
+    ).rejects.toThrow(/has no price; pass unit_price explicitly/)
+  })
+
+  it('does not invent "st" when the article has no unit', async () => {
+    const { supabase, enqueue } = createQueuedMockSupabase()
+    enqueue({ data: CUSTOMER, error: null })
+    enqueue({ data: [{ ...ARTICLE, unit: null }], error: null })
+
+    await expect(
+      createInvoice.execute(
+        { customer_id: 'cust-1', invoice_date: '2026-05-12', items: [{ article_id: ARTICLE_ID, quantity: 1 }] },
+        'company-1',
+        'user-1',
+        supabase as never,
+      ),
+    ).rejects.toThrow(/has no unit; pass unit explicitly/)
+  })
+
   it('lets explicit line values win over the article', async () => {
     const { supabase, enqueue } = createQueuedMockSupabase()
     enqueueHappyPath(enqueue, CUSTOMER, [ARTICLE])

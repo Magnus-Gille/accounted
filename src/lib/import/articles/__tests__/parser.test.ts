@@ -108,13 +108,26 @@ describe('parseArticlesFile', () => {
     expect(result.rows[2].type).toBe('tjanst')
   })
 
-  it('falls back to "st" when no unit is given', () => {
+  it('keeps unit and price null (not specified) when the file has neither', () => {
     const buffer = buildXlsx([
       ['Benämning'],
       ['A'],
     ])
     const result = parseArticlesFile(buffer, 'unit.xlsx')
-    expect(result.rows[0].unit).toBe('st')
+    expect(result.rows[0].unit).toBeNull()
+    expect(result.rows[0].price_excl_vat).toBeNull()
+    expect(result.rows[0].is_valid).toBe(true)
+  })
+
+  it('keeps blank unit/price cells null but an explicit 0 price as 0', () => {
+    const buffer = buildXlsx([
+      ['Benämning', 'Enhet', 'Pris'],
+      ['Blank', '', ''],
+      ['Zero', 'st', '0'],
+    ])
+    const result = parseArticlesFile(buffer, 'blank.xlsx')
+    expect(result.rows[0]).toMatchObject({ unit: null, price_excl_vat: null })
+    expect(result.rows[1]).toMatchObject({ unit: 'st', price_excl_vat: 0 })
   })
 
   it('keeps class 1-3 posting accounts and drops a class-4 account', () => {

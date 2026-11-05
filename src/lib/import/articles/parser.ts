@@ -159,10 +159,11 @@ export function parseArticlesFile(
     const nameEn = cell(row, columns.name_en_col)
     const type = normalizeArticleType(cell(row, columns.type_col))
     const unitRaw = cell(row, columns.unit_col)
-    const unit = unitRaw ?? 'st'
+    // Absent unit stays null ("not specified"), never a hidden 'st'.
+    const unit = unitRaw
 
     const priceRaw = cell(row, columns.price_col)
-    const price = priceRaw !== null ? parseAmount(priceRaw) : 0
+    const price = priceRaw !== null ? parseAmount(priceRaw) : null
 
     // Keep only well-formed ISO 4217 codes; the execute route validates them
     // against the currencies table. null = column absent/blank (imports as SEK).
@@ -210,7 +211,7 @@ export function parseArticlesFile(
     const notes = cell(row, columns.notes_col)
 
     const validationErrors: string[] = []
-    if (price < 0) validationErrors.push('Priset kan inte vara negativt')
+    if (price !== null && price < 0) validationErrors.push('Priset kan inte vara negativt')
     if (costPrice !== null && costPrice < 0) validationErrors.push('Inköpspriset kan inte vara negativt')
 
     rows.push({

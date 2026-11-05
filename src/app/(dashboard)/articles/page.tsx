@@ -222,7 +222,8 @@ function ArticlesPageInner() {
       let cmp = 0
       switch (sortColumn) {
         case 'price_excl_vat':
-          cmp = a.price_excl_vat - b.price_excl_vat
+          // Unspecified prices sort before priced ones.
+          cmp = (a.price_excl_vat ?? -1) - (b.price_excl_vat ?? -1)
           break
         case 'vat_rate':
           cmp = a.vat_rate - b.vat_rate
@@ -424,7 +425,7 @@ function ArticlesPageInner() {
                       {article.unit}
                     </td>
                     <td className={cn(TD_CLASS, 'whitespace-nowrap text-right tabular-nums')}>
-                      {formatCurrency(article.price_excl_vat, article.currency)}
+                      {article.price_excl_vat == null ? '' : formatCurrency(article.price_excl_vat, article.currency)}
                     </td>
                     <td className={cn(TD_CLASS, 'hidden whitespace-nowrap text-right tabular-nums text-muted-foreground sm:table-cell')}>
                       {article.vat_rate} %

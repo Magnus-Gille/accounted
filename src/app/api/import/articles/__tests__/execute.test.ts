@@ -112,6 +112,22 @@ describe('POST /api/import/articles/execute', () => {
     ])
   })
 
+  it('inserts a row without unit and price as null (no st / 0 defaults)', async () => {
+    enqueue({ data: { id: 'a1', name: 'Utan pris', article_number: null } })
+
+    const res = await POST(makeRequest({
+      rows: [row({ name: 'Utan pris', unit: null, price_excl_vat: null })],
+      update_duplicates: false,
+    }))
+    const { status, body } = await parseJsonResponse(res)
+
+    expect(status).toBe(200)
+    expect(body.data.created).toBe(1)
+    expect(findCall('articles', 'insert')).toEqual([
+      expect.objectContaining({ name: 'Utan pris', unit: null, price_excl_vat: null }),
+    ])
+  })
+
   it('skips a duplicate matched by article number when update_duplicates is false', async () => {
     mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Existing', article_number: 'A-1' }])
 

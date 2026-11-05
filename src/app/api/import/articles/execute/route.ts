@@ -145,12 +145,14 @@ export const POST = withRouteContext(
           }
 
           // Merge mode: overwrite only fields the file clearly carries a value
-          // for. type/unit/vat_rate carry parser defaults that can't be told
-          // apart from "absent", so they are left untouched to avoid clobbering.
+          // for. type/vat_rate carry parser defaults that can't be told apart
+          // from "absent", so they are left untouched to avoid clobbering.
+          // unit/price are null when absent, so a non-null value is explicit.
           const merged: Record<string, unknown> = {}
           if (row.name) merged.name = row.name
           if (row.name_en) merged.name_en = row.name_en
-          if (row.price_excl_vat > 0) merged.price_excl_vat = row.price_excl_vat
+          if (row.price_excl_vat !== null) merged.price_excl_vat = row.price_excl_vat
+          if (row.unit) merged.unit = row.unit
           if (row.cost_price !== null) merged.cost_price = row.cost_price
           if (row.ean) merged.ean = row.ean
           if (row.housework_type) merged.housework_type = row.housework_type
@@ -190,7 +192,7 @@ export const POST = withRouteContext(
             name: row.name,
             name_en: row.name_en,
             type: row.type,
-            unit: row.unit || 'st',
+            unit: row.unit || null,
             price_excl_vat: row.price_excl_vat,
             currency: currency ?? 'SEK',
             vat_rate: row.vat_rate,

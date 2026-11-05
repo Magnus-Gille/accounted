@@ -27,9 +27,10 @@ export interface ParsedArticleRow {
   name_en: string | null
   article_number: string | null
   type: ArticleType
-  unit: string
-  /** Always stored EXCLUDING VAT. */
-  price_excl_vat: number
+  /** null = not in the file (not specified). */
+  unit: string | null
+  /** Always stored EXCLUDING VAT. null = not in the file (not 0). */
+  price_excl_vat: number | null
   /** ISO 4217 price currency from the file's Valuta column; null = not in the
    *  file (imports as SEK). Validated against the currencies table at execute. */
   currency: string | null

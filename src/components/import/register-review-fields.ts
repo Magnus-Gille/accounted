@@ -96,8 +96,8 @@ export function useArticleReviewFields(): ReviewFields<DetectedArticleColumns, P
         value: (r) => r.article_number ?? t('assigned_automatically'),
       },
       type_col: { label: t('field_article_type'), value: (r) => tType(`type_${r.type}`) },
-      unit_col: { label: t('field_unit'), value: (r) => r.unit },
-      price_col: { label: t('field_price'), value: (r) => formatAmount(r.price_excl_vat) },
+      unit_col: { label: t('field_unit'), value: (r) => r.unit ?? '' },
+      price_col: { label: t('field_price'), value: (r) => (r.price_excl_vat == null ? '' : formatAmount(r.price_excl_vat)) },
       // A file without a currency column imports as SEK.
       currency_col: { label: t('field_currency'), value: (r) => r.currency ?? 'SEK' },
       vat_rate_col: { label: t('field_vat_rate'), value: (r) => `${r.vat_rate} %` },

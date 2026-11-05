@@ -1010,8 +1010,11 @@ export const HouseworkTypeSchema = z
 export const CreateArticleSchema = z.object({
   name: z.string().min(1, 'Article name is required').max(200),
   type: ArticleTypeSchema.optional(),
-  unit: z.string().min(1).max(32).optional(),
-  price_excl_vat: nonNegativeAmount,
+  // null/omitted = "not specified" (no hidden 'st' default).
+  unit: z.string().trim().min(1).max(32).nullable().optional(),
+  // Key stays required (explicit decision), but null = "not specified" and
+  // is preserved instead of being coerced to 0.
+  price_excl_vat: nonNegativeAmount.nullable(),
   vat_rate: vatRatePercent.optional(),
   // Default price currency; omitted = SEK. Pre-fills a new invoice's currency.
   // Constrained to the same CurrencySchema enum invoices use, which mirrors the
@@ -3635,8 +3638,8 @@ const ImportedArticleRowSchema = z.object({
   name_en: z.string().nullable(),
   article_number: z.string().nullable(),
   type: ArticleTypeSchema,
-  unit: z.string(),
-  price_excl_vat: nonNegativeAmount,
+  unit: z.string().nullable(),
+  price_excl_vat: nonNegativeAmount.nullable(),
   // ISO 4217 shape only; the execute route validates against the currencies
   // table and drops unknown codes (mirrors revenue_account). Optional so rows
   // parsed before this field existed still validate.

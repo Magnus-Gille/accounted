@@ -1015,8 +1015,15 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
     if (!a) return
     setValue(`items.${index}.article_id`, a.id, { shouldDirty: true })
     setValue(`items.${index}.description`, a.name, { shouldValidate: true, shouldDirty: true })
-    if (a.unit) setValue(`items.${index}.unit`, a.unit, { shouldDirty: true })
-    setValue(`items.${index}.unit_price`, Number(a.price_excl_vat) || 0, { shouldValidate: true, shouldDirty: true })
+    // No hidden defaults: an article without a unit clears the line unit and an
+    // article without a price leaves the price empty (NaN, rejected by the
+    // schema), so the user must enter both explicitly. A stored 0 stays 0.
+    setValue(`items.${index}.unit`, a.unit ?? '', { shouldValidate: true, shouldDirty: true })
+    setValue(
+      `items.${index}.unit_price`,
+      a.price_excl_vat == null ? Number.NaN : Number(a.price_excl_vat),
+      { shouldValidate: true, shouldDirty: true },
+    )
     // Only adopt the article's VAT rate when it belongs to the customer's
     // DEFAULT set, never to the wider permitted set. An article's stored rate is
     // its domestic rate; nothing on it says the supply is one of the ML 6 kap.
@@ -1164,8 +1171,8 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: item.description.trim(),
-          unit: item.unit || 'st',
-          price_excl_vat: Number(item.unit_price) || 0,
+          unit: item.unit || null,
+          price_excl_vat: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : null,
           vat_rate: item.vat_rate ?? 25,
           // The typed unit price is in the invoice's currency: without this an
           // EUR invoice line becomes an SEK article with the EUR number.
