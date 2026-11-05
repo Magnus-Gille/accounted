@@ -9,8 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { revalidateAfterPriceEdit } from '@/lib/import/articles/validation-messages'
-import { parseStrictAmount } from '@/lib/import/articles/strict-amount'
+import { applyPriceEdit, priceInputValue } from '@/lib/import/articles/price-edit'
 import { Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ArticleType } from '@/types'
@@ -93,22 +92,18 @@ export default function ArticlesEditStep({
     setRows((prev) => prev.filter((r) => r.id !== id))
   }, [])
 
+  // Raw text per row while editing, so a partial "12," is not wiped from the
+  // input; the row's price/errors always come from the complete text.
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({})
+
   const handlePriceChange = useCallback((id: string, raw: string) => {
-    // Same strict whole-value parse as the import: blank/placeholder = not
-    // specified; malformed or ambiguous text stays an error, never a number.
-    const parsed = parseStrictAmount(raw)
-    const price = parsed.value
+    setPriceDrafts((prev) => ({ ...prev, [id]: raw }))
     setRows((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              price_excl_vat: price,
-              // Cost-price errors survive a price edit: there is no cost-price editor.
-              ...revalidateAfterPriceEdit(r.validation_errors, parsed),
-            }
-          : r,
-      ),
+      prev.map((r) => {
+        if (r.id !== id) return r
+        const { draft: _draft, ...updates } = applyPriceEdit(r.validation_errors, raw)
+        return { ...r, ...updates }
+      }),
     )
   }, [])
 
@@ -227,7 +222,7 @@ export default function ArticlesEditStep({
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <Input
-                        value={row.price_excl_vat == null ? '' : String(row.price_excl_vat)}
+                        value={priceInputValue(priceDrafts[row.id], row.price_excl_vat)}
                         inputMode="decimal"
                         onChange={(e) => handlePriceChange(row.id, e.target.value)}
                         className="h-8 text-right tabular-nums"
