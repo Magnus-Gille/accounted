@@ -640,14 +640,10 @@ function resolveInvoiceLineFromArticle(
   }
   const description = item.description?.trim() || article?.name
   if (!description) throw new Error(`Item ${lineNo}: description is required (or set article_id)`)
-  const unit = item.unit?.trim() || article?.unit?.trim() || undefined
-  if (!unit) {
-    throw new Error(
-      article
-        ? `Item ${lineNo}: article "${article.name}" has no unit; pass unit explicitly (st, tim, dag).`
-        : `Item ${lineNo}: unit is required (st, tim, dag)`,
-    )
-  }
+  // An explicitly passed unit ('' included, after trim) wins, so a client can
+  // create a unitless line. Omitted unit falls back to the article's unit and
+  // then to '' (no unit), matching the editor/schema.
+  const unit = typeof item.unit === 'string' ? item.unit.trim() : (article?.unit?.trim() ?? '')
   let unitPrice = item.unit_price
   if (unitPrice == null && article) {
     if (article.price_excl_vat == null) {
@@ -8697,7 +8693,7 @@ export const tools: McpTool[] = [
         article_id: { type: 'string', description: 'UUID of the article to update.' },
         name: { type: 'string' },
         type: { type: 'string', enum: ['vara', 'tjanst'] },
-        unit: { type: 'string' },
+        unit: { type: ['string', 'null'], description: 'Unit, e.g. st, tim, kg. null or empty string clears it to not specified; omit to leave unchanged.' },
         price_excl_vat: { type: ['number', 'null'], description: 'null clears the price to not specified.' },
         currency: { type: 'string', description: 'Price currency as ISO 4217 code (e.g. EUR), or omit to leave unchanged.' },
         vat_rate: { type: 'number', enum: [0, 6, 12, 25] },

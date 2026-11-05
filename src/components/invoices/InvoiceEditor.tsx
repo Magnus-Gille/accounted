@@ -51,6 +51,7 @@ import {
   type NextStep,
 } from '@/components/invoices/invoice-editor-flow'
 import { sortArticles } from '@/lib/articles/sort'
+import { articlePickerPriceLabel } from '@/lib/articles/picker-price-label'
 import ArticleCombobox from '@/components/invoices/ArticleCombobox'
 import { getAmountToPay } from '@/lib/invoices/rounding'
 import { computeLineNet, hasLineDiscount } from '@/lib/invoices/line-amounts'
@@ -4405,7 +4406,7 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
                           {a.article_number ? `${a.article_number}: ${a.name}` : a.name}
                         </span>
                         <span className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
-                          {formatCurrency(Number(a.price_excl_vat) || 0, (a.currency as Currency) || watchCurrency)}/{a.unit || 'st'} &middot; {a.vat_rate} %
+                          {articlePickerPriceLabel(a, (a.currency as Currency) || watchCurrency)} &middot; {a.vat_rate} %
                         </span>
                       </button>
                     ))}

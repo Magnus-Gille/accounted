@@ -10364,6 +10364,7 @@
     "submit_edit": "Spara ändringar",
     "validation_customer_required": "Välj en kund",
     "validation_lines_required": "Lägg till minst en orderrad med beskrivning",
+    "validation_unit_price_required": "Ange ett à-pris för varje orderrad (0 är tillåtet)",
     "create_failed_title": "Kunde inte skapa kundordern",
     "update_failed_title": "Kunde inte spara kundordern",
     "created_title": "Kundorder {number} skapad",

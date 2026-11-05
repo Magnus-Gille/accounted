@@ -24,6 +24,7 @@ import {
   DocumentUploadSourceSchema,
   // Invoice schemas
   CreateInvoiceItemSchema,
+  SelfBillingInvoiceItemSchema,
   CreateInvoiceSchema,
   UpdateInvoiceSchema,
   CreateCreditNoteSchema,
@@ -3589,5 +3590,31 @@ describe('CreateJournalEntryLineSchema: cost_center/project aliases follow the b
       const result = CreateJournalEntryLineSchema.safeParse(line(bad))
       expect(result.success).toBe(false)
     }
+  })
+})
+
+describe('SelfBillingInvoiceItemSchema unit', () => {
+  const item = (extra: Record<string, unknown> = {}) => ({
+    description: 'Konsulttjänst',
+    quantity: 1,
+    unit_price: 100,
+    ...extra,
+  })
+
+  it('accepts an empty unit and stores it as an empty string', () => {
+    const r = SelfBillingInvoiceItemSchema.safeParse(item({ unit: '' }))
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.unit).toBe('')
+  })
+
+  it('trims the unit; whitespace-only collapses to empty', () => {
+    const a = SelfBillingInvoiceItemSchema.parse(item({ unit: ' tim ' }))
+    const b = SelfBillingInvoiceItemSchema.parse(item({ unit: '   ' }))
+    expect(a.unit).toBe('tim')
+    expect(b.unit).toBe('')
+  })
+
+  it('does not invent "st" when the unit is omitted', () => {
+    expect(SelfBillingInvoiceItemSchema.parse(item()).unit).toBe('')
   })
 })

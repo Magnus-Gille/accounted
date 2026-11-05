@@ -28,6 +28,7 @@ import { sortArticles } from '@/lib/articles/sort'
 import { computeLineNet } from '@/lib/invoices/line-amounts'
 import UnitPicker from '@/components/invoices/UnitPicker'
 import { roundOre } from '@/lib/money'
+import { hasLineWithMissingPrice } from './line-validation'
 import { getErrorMessage, type ErrorLocale } from '@/lib/errors/get-error-message'
 import { cn, formatCurrency } from '@/lib/utils'
 import { formatQty, todayIso } from '@/components/sales-orders/labels'
@@ -305,6 +306,9 @@ export default function SalesOrderForm({ mode, initial }: SalesOrderFormProps) {
     const productLines = lines.filter((l) => l.line_type === 'product')
     if (productLines.length === 0 || productLines.some((l) => !l.description.trim())) {
       nextErrors.lines = t('validation_lines_required')
+    } else if (hasLineWithMissingPrice(lines)) {
+      // An unpriced article leaves the price empty; never save that as 0.
+      nextErrors.lines = t('validation_unit_price_required')
     }
     setErrors(nextErrors)
     if (nextErrors.customer || nextErrors.lines) return

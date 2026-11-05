@@ -10364,6 +10364,7 @@
     "submit_edit": "Save changes",
     "validation_customer_required": "Select a customer",
     "validation_lines_required": "Add at least one order line with a description",
+    "validation_unit_price_required": "Enter a unit price for every product line (0 is allowed)",
     "create_failed_title": "Could not create the sales order",
     "update_failed_title": "Could not save the sales order",
     "created_title": "Sales order {number} created",

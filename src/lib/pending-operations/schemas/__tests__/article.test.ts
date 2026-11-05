@@ -74,3 +74,26 @@ describe('UpdateArticleParamsSchema housework_type', () => {
     expect(() => UpdateArticleParamsSchema.parse({ ...id, housework_type: 'Snickeri' })).toThrow()
   })
 })
+
+describe('UpdateArticleParamsSchema unit', () => {
+  const articleId = { article_id: '0b9c1a2e-5d4f-4e6a-9b8c-7d6e5f4a3b21' }
+
+  it('leaves the unit untouched when omitted (key absent from the parsed update)', () => {
+    const parsed = UpdateArticleParamsSchema.parse({ ...articleId, name: 'X' })
+    expect(parsed.unit).toBeUndefined()
+  })
+
+  it('null clears the unit to not specified', () => {
+    expect(UpdateArticleParamsSchema.parse({ ...articleId, unit: null }).unit).toBeNull()
+  })
+
+  it('empty or whitespace-only string also clears it', () => {
+    expect(UpdateArticleParamsSchema.parse({ ...articleId, unit: '' }).unit).toBeNull()
+    expect(UpdateArticleParamsSchema.parse({ ...articleId, unit: '  ' }).unit).toBeNull()
+  })
+
+  it('sets a trimmed unit and still rejects an over-long one', () => {
+    expect(UpdateArticleParamsSchema.parse({ ...articleId, unit: ' tim ' }).unit).toBe('tim')
+    expect(() => UpdateArticleParamsSchema.parse({ ...articleId, unit: 'x'.repeat(33) })).toThrow()
+  })
+})

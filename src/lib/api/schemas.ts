@@ -1048,7 +1048,9 @@ export const UpdateArticleSchema = CreateArticleSchema.partial().extend({
 export const SelfBillingInvoiceItemSchema = z.object({
   description: z.string().min(1, 'Item description is required'),
   quantity: z.number().positive('Quantity must be positive'),
-  unit: z.string().min(1, 'Unit is required').default('st'),
+  // '' = no unit (same representation as CreateInvoiceItemSchema); trimmed so
+  // whitespace-only collapses to it. Omitted = no unit, never a hidden 'st'.
+  unit: z.string().trim().default(''),
   unit_price: z.number(),
   vat_rate: z
     .union([z.literal(0), z.literal(6), z.literal(12), z.literal(25)])
