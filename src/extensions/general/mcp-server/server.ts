@@ -8693,7 +8693,7 @@ export const tools: McpTool[] = [
         article_id: { type: 'string', description: 'UUID of the article to update.' },
         name: { type: 'string' },
         type: { type: 'string', enum: ['vara', 'tjanst'] },
-        unit: { type: ['string', 'null'], description: 'Unit, e.g. st, tim, kg. null or empty string clears it to not specified; omit to leave unchanged.' },
+        unit: { type: ['string', 'null'] },
         price_excl_vat: { type: ['number', 'null'], description: 'null clears the price to not specified.' },
         currency: { type: 'string', description: 'Price currency as ISO 4217 code (e.g. EUR), or omit to leave unchanged.' },
         vat_rate: { type: 'number', enum: [0, 6, 12, 25] },
