@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { revalidateAfterPriceEdit } from '@/lib/import/articles/validation-messages'
+import { parseStrictAmount } from '@/lib/import/articles/strict-amount'
 import { Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ArticleType } from '@/types'
@@ -93,9 +94,10 @@ export default function ArticlesEditStep({
   }, [])
 
   const handlePriceChange = useCallback((id: string, raw: string) => {
-    const n = parseFloat(raw.replace(',', '.'))
-    // An emptied/unparseable field means "not specified", never 0.
-    const price = Number.isFinite(n) ? n : null
+    // Same strict whole-value parse as the import: blank/placeholder = not
+    // specified; malformed or ambiguous text stays an error, never a number.
+    const parsed = parseStrictAmount(raw)
+    const price = parsed.value
     setRows((prev) =>
       prev.map((r) =>
         r.id === id
@@ -103,7 +105,7 @@ export default function ArticlesEditStep({
               ...r,
               price_excl_vat: price,
               // Cost-price errors survive a price edit: there is no cost-price editor.
-              ...revalidateAfterPriceEdit(r.validation_errors, price),
+              ...revalidateAfterPriceEdit(r.validation_errors, parsed),
             }
           : r,
       ),

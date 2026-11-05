@@ -14,16 +14,28 @@ const COST_ERRORS: ReadonlySet<string> = new Set([
   ARTICLE_ERR.costNegative,
 ])
 
+/** Result of the strict article amount parse (see parseStrictAmount in parser.ts). */
+export interface ParsedPriceInput {
+  value: number | null
+  invalid: boolean
+  ambiguous: boolean
+}
+
 /**
  * Apply an edited sales price to a row: price errors are recomputed from the
- * new value, while cost-price errors are kept (the edit step has no cost-price
- * editor, so such a row stays invalid until it is removed).
+ * strictly parsed edit (malformed or ambiguous text stays an error and never
+ * becomes a number), while cost-price errors are kept (the edit step has no
+ * cost-price editor, so such a row stays invalid until it is removed).
  */
 export function revalidateAfterPriceEdit(
   existingErrors: readonly string[],
-  price: number | null,
+  parsed: ParsedPriceInput,
 ): { is_valid: boolean; validation_errors: string[] } {
   const errors = existingErrors.filter((e) => COST_ERRORS.has(e))
-  if (price !== null && price < 0) errors.unshift(ARTICLE_ERR.priceNegative)
-  return { is_valid: errors.length === 0, validation_errors: errors }
+  const priceErrors: string[] = []
+  if (parsed.invalid) priceErrors.push(ARTICLE_ERR.priceInvalid)
+  if (parsed.ambiguous) priceErrors.push(ARTICLE_ERR.priceAmbiguous)
+  if (parsed.value !== null && parsed.value < 0) priceErrors.push(ARTICLE_ERR.priceNegative)
+  const all = [...priceErrors, ...errors]
+  return { is_valid: all.length === 0, validation_errors: all }
 }
