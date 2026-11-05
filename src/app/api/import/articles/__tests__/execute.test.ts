@@ -40,6 +40,8 @@ vi.mock('@/lib/articles/validate-revenue-account', () => ({
   checkRevenueAccount: (...a: unknown[]) => mockCheckRevenueAccount(...a),
 }))
 
+import * as XLSX from 'xlsx'
+import { parseArticlesFile } from '@/lib/import/articles/parser'
 import { POST } from '../execute/route'
 
 const mockUser = { id: 'user-1', email: 'test@test.se' }
@@ -192,6 +194,43 @@ describe('POST /api/import/articles/execute', () => {
 
     const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
     expect(payload).toMatchObject({ price_excl_vat: 0 })
+  })
+
+  describe('parser output fed into merge mode', () => {
+    function parseOne(priceCell: string) {
+      const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Artikelnummer', 'Pris'], ['Old', 'A-1', priceCell]])
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Artiklar')
+      const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+      return parseArticlesFile(buf, 'p.xlsx').rows[0]
+    }
+
+    async function merge(priceCell: string) {
+      mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
+      enqueue({ data: { id: 'x', name: 'Old', article_number: 'A-1' } })
+      const parsed = parseOne(priceCell)
+      await POST(makeRequest({ rows: [parsed], update_duplicates: true }))
+      return { parsed, update: (findCall('articles', 'update') as Record<string, unknown>[] | undefined)?.[0] }
+    }
+
+    it('"-" leaves the existing price untouched', async () => {
+      const { parsed, update } = await merge('-')
+      expect(parsed.is_valid).toBe(true)
+      expect(update ?? {}).not.toHaveProperty('price_excl_vat')
+    })
+
+    it('"0" overwrites with an explicit zero', async () => {
+      const { parsed, update } = await merge('0')
+      expect(parsed.is_valid).toBe(true)
+      expect(update).toMatchObject({ price_excl_vat: 0 })
+    })
+
+    it.each(['12.500', '12 5'])('%s is flagged invalid and never becomes a price', async (cell) => {
+      const { parsed, update } = await merge(cell)
+      expect(parsed.is_valid).toBe(false)
+      expect(parsed.price_excl_vat).toBeNull()
+      expect(update ?? {}).not.toHaveProperty('price_excl_vat')
+    })
   })
 
   it('rejects a row with an invalid (negative) price before importing or updating anything', async () => {

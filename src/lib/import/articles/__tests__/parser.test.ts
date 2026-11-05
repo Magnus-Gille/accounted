@@ -223,6 +223,57 @@ describe('parseArticlesFile', () => {
       expect(r.validation_errors).toContain('Priset kan inte vara negativt')
     })
 
+    it('treats a single d.ddd dot value without comma as ambiguous, never a number', () => {
+      for (const r of parsePrices(['12.500', '2.500', '0.005', '123.456'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+        expect(r.validation_errors).toContain(
+          'Priset är tvetydigt (punkt som tusentalsavgränsare eller decimal?)',
+        )
+      }
+    })
+
+    it('reads dot as thousands only with a decimal comma or 2+ groups', () => {
+      const rows = parsePrices(['1.234,50', '1.234.567', '12.5', '12.50', '12.5000', '1234.567', '12,500'])
+      expect(rows.map((r) => r.price_excl_vat)).toEqual([1234.5, 1234567, 12.5, 12.5, 12.5, 1234.57, 12.5])
+      expect(rows.every((r) => r.is_valid)).toBe(true)
+    })
+
+    it('rejects malformed dot groups', () => {
+      for (const r of parsePrices(['01.234.567', '0.123,45', '1.23.456'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+      }
+    })
+
+    it('accepts only correctly grouped space separators and rejects tabs/newlines', () => {
+      const ok = parsePrices(['1 234', '1\u00a0234,50', '1\u202f234 567', ' 950 ', '1 234.50'])
+      expect(ok.map((r) => r.price_excl_vat)).toEqual([1234, 1234.5, 1234567, 950, 1234.5])
+      for (const r of parsePrices(['12 5', '12\n5', '12\t5', '1 23', '1234 567'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+      }
+    })
+
+    it('uses the true numeric value of an xlsx number cell, not its display text', () => {
+      const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Pris'], ['A', 12.5], ['B', '12.500']])
+      ws.B2.z = '0.000' // displays "12.500"
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Artiklar')
+      const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+      const rows = parseArticlesFile(buf, 'num.xlsx').rows
+      expect(rows[0]).toMatchObject({ price_excl_vat: 12.5, is_valid: true })
+      // A text cell "12.500" stays ambiguous.
+      expect(rows[1]).toMatchObject({ price_excl_vat: null, is_valid: false })
+    })
+
+    it('does not trust the numeric guess of a CSV "12.500"', () => {
+      const csv = new TextEncoder().encode('Benämning;Pris\nA;12.500\nB;12.5\n')
+      const rows = parseArticlesFile(csv.buffer as ArrayBuffer, 'p.csv').rows
+      expect(rows[0]).toMatchObject({ price_excl_vat: null, is_valid: false })
+      expect(rows[1]).toMatchObject({ price_excl_vat: 12.5, is_valid: true })
+    })
+
     it('applies the same strictness to cost price', () => {
       const rows = parseArticlesFile(
         buildXlsx([['Benämning', 'Pris', 'Inköpspris'], ['A', '10', '-'], ['B', '10', '5x'], ['C', '10', '0']]),

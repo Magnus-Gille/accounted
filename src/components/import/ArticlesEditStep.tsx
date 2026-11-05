@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { revalidateAfterPriceEdit } from '@/lib/import/articles/validation-messages'
 import { Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ArticleType } from '@/types'
@@ -95,13 +96,19 @@ export default function ArticlesEditStep({
     const n = parseFloat(raw.replace(',', '.'))
     // An emptied/unparseable field means "not specified", never 0.
     const price = Number.isFinite(n) ? n : null
-    const negative = price !== null && price < 0
-    updateRow(id, {
-      price_excl_vat: price,
-      is_valid: !negative,
-      validation_errors: negative ? ['Priset kan inte vara negativt'] : [],
-    })
-  }, [updateRow])
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              price_excl_vat: price,
+              // Cost-price errors survive a price edit: there is no cost-price editor.
+              ...revalidateAfterPriceEdit(r.validation_errors, price),
+            }
+          : r,
+      ),
+    )
+  }, [])
 
   const handleExecute = () => {
     if (!canContinue) return

@@ -4,6 +4,7 @@ import { detectArticleColumns } from './column-detector'
 import { cellOrNull } from '../shared/column-utils'
 import { readBestSheet } from '../shared/workbook-reader'
 import type { DetectedArticleColumns, ParsedArticleRow } from './types'
+import { ARTICLE_ERR } from './validation-messages'
 import { deductionTypeForWorkType, normalizeHouseworkType } from '@/lib/invoices/rot-rut-rules'
 
 const VALID_VAT_RATES = [0, 6, 12, 25] as const
@@ -79,23 +80,57 @@ const INCL_VAT_HEADER_RE = /brutto|inkl|incl|gross/i
  * @param columnOverrides - Optional manual column mapping
  */
 const PLACEHOLDER_RE = /^[-\u2013\u2014]$/
-const STRICT_AMOUNT_RE = /^[-+]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[.,]\d+)?$/
+// Space, nbsp and narrow nbsp are the only accepted thousands separators
+// between spaces; tabs and newlines are never part of a number.
+const SPACE_GROUPED_RE = /^[-+]?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?$/
+// Dot as thousands separator only with a decimal comma, or with two or more
+// dot groups, and a first group of 1-3 digits not starting with 0.
+const DOT_THOUSANDS_COMMA_RE = /^[-+]?[1-9]\d{0,2}(?:\.\d{3})+,\d+$/
+const DOT_THOUSANDS_MULTI_RE = /^[-+]?[1-9]\d{0,2}(?:\.\d{3}){2,}$/
+// A single d.ddd without a comma can be 12.500 (12 500) or 12.5: ambiguous.
+const AMBIGUOUS_DOT_RE = /^[-+]?\d{1,3}\.\d{3}$/
+const PLAIN_RE = /^[-+]?\d+(?:[.,]\d+)?$/
+
+interface StrictAmount {
+  value: number | null
+  invalid: boolean
+  ambiguous: boolean
+}
 
 /**
- * Strict whole-cell amount parse for article prices. Blank or a lone
- * placeholder (-, en dash, em dash) is null (not specified); a fully numeric
- * value (space/nbsp thousands, dot thousands before 3 digits, decimal comma or
- * dot) is a number, including 0; anything else is invalid and never a number
- * (unlike the lenient parseFloat-based opening-balance parseAmount).
+ * Strict whole-cell amount parse for article prices (unlike the lenient
+ * parseFloat-based opening-balance parseAmount).
+ *
+ * - A real numeric spreadsheet value (`numeric`) is used as is: the cell text
+ *   is only its display format (12.5 with format 0.000 reads "12.500").
+ * - Blank or a lone placeholder (-, en dash, em dash) is null (unspecified).
+ * - Otherwise the whole text must be a number: plain digits with a decimal
+ *   comma or dot, correctly grouped space/nbsp thousands, or dot thousands
+ *   (see the regexes above). A single d.ddd is ambiguous and rejected.
+ * - Anything else is invalid and never a number.
  */
-function parseStrictAmount(raw: string | null): { value: number | null; invalid: boolean } {
-  if (raw === null) return { value: null, invalid: false }
-  const str = raw.replace(/\s/g, '')
-  if (str === '' || PLACEHOLDER_RE.test(str)) return { value: null, invalid: false }
-  if (!STRICT_AMOUNT_RE.test(str)) return { value: null, invalid: true }
-  const num = Number(str.replace(/\.(?=\d{3}(?!\d))/g, '').replace(',', '.'))
-  if (!Number.isFinite(num)) return { value: null, invalid: true }
-  return { value: Math.round(num * 100) / 100, invalid: false }
+function parseStrictAmount(raw: string | null, numeric: number | null = null): StrictAmount {
+  if (numeric !== null && Number.isFinite(numeric)) {
+    return { value: Math.round(numeric * 100) / 100, invalid: false, ambiguous: false }
+  }
+  if (raw === null) return { value: null, invalid: false, ambiguous: false }
+  const str = raw.trim()
+  if (str === '' || PLACEHOLDER_RE.test(str)) return { value: null, invalid: false, ambiguous: false }
+  if (AMBIGUOUS_DOT_RE.test(str)) return { value: null, invalid: false, ambiguous: true }
+
+  let normalized: string
+  if (DOT_THOUSANDS_COMMA_RE.test(str) || DOT_THOUSANDS_MULTI_RE.test(str)) {
+    normalized = str.replace(/\./g, '').replace(',', '.')
+  } else if (SPACE_GROUPED_RE.test(str)) {
+    normalized = str.replace(/[ \u00a0\u202f]/g, '').replace(',', '.')
+  } else if (PLAIN_RE.test(str)) {
+    normalized = str.replace(',', '.')
+  } else {
+    return { value: null, invalid: true, ambiguous: false }
+  }
+  const num = Number(normalized)
+  if (!Number.isFinite(num)) return { value: null, invalid: true, ambiguous: false }
+  return { value: Math.round(num * 100) / 100, invalid: false, ambiguous: false }
 }
 
 export function parseArticlesFile(
@@ -113,7 +148,7 @@ export function parseArticlesFile(
   warnings: string[]
   notices: ImportNotice[]
 } {
-  const { sheetName, rawData } = readBestSheet(buffer, filename)
+  const { sheetName, rawData, numericData } = readBestSheet(buffer, filename)
 
   if (rawData.length < 2) {
     const fallbackColumns: DetectedArticleColumns = columnOverrides ?? {
@@ -155,6 +190,11 @@ export function parseArticlesFile(
   const cell = (row: string[], col: number | null): string | null =>
     col !== null ? cellOrNull(row[col]) : null
 
+  // Real numeric value of a spreadsheet cell (rawData row index, header = 0).
+  const dataRowStart = 1
+  const numericAt = (rowIdx: number, col: number | null): number | null =>
+    col !== null ? (numericData[rowIdx]?.[col] ?? null) : null
+
   // Surface incl-VAT price columns once for the whole file.
   if (columns.price_col !== null && INCL_VAT_HEADER_RE.test(headers[columns.price_col] ?? '')) {
     warnings.push(
@@ -182,7 +222,11 @@ export function parseArticlesFile(
     const unit = unitRaw
 
     const priceRaw = cell(row, columns.price_col)
-    const { value: price, invalid: priceInvalid } = parseStrictAmount(priceRaw)
+    const {
+      value: price,
+      invalid: priceInvalid,
+      ambiguous: priceAmbiguous,
+    } = parseStrictAmount(priceRaw, numericAt(dataRowStart + i, columns.price_col))
 
     // Keep only well-formed ISO 4217 codes; the execute route validates them
     // against the currencies table. null = column absent/blank (imports as SEK).
@@ -208,7 +252,11 @@ export function parseArticlesFile(
     }
 
     const costRaw = cell(row, columns.cost_price_col)
-    const { value: costPrice, invalid: costInvalid } = parseStrictAmount(costRaw)
+    const {
+      value: costPrice,
+      invalid: costInvalid,
+      ambiguous: costAmbiguous,
+    } = parseStrictAmount(costRaw, numericAt(dataRowStart + i, columns.cost_price_col))
 
     const ean = cell(row, columns.ean_col)
     // Canonical work-type code / bare ROT-RUT, or null: a boolean "Rot" column
@@ -230,10 +278,12 @@ export function parseArticlesFile(
     const notes = cell(row, columns.notes_col)
 
     const validationErrors: string[] = []
-    if (priceInvalid) validationErrors.push('Priset är inte ett giltigt belopp')
-    if (costInvalid) validationErrors.push('Inköpspriset är inte ett giltigt belopp')
-    if (price !== null && price < 0) validationErrors.push('Priset kan inte vara negativt')
-    if (costPrice !== null && costPrice < 0) validationErrors.push('Inköpspriset kan inte vara negativt')
+    if (priceInvalid) validationErrors.push(ARTICLE_ERR.priceInvalid)
+    if (priceAmbiguous) validationErrors.push(ARTICLE_ERR.priceAmbiguous)
+    if (costInvalid) validationErrors.push(ARTICLE_ERR.costInvalid)
+    if (costAmbiguous) validationErrors.push(ARTICLE_ERR.costAmbiguous)
+    if (price !== null && price < 0) validationErrors.push(ARTICLE_ERR.priceNegative)
+    if (costPrice !== null && costPrice < 0) validationErrors.push(ARTICLE_ERR.costNegative)
 
     rows.push({
       row_index: i + 2, // 1-based + header

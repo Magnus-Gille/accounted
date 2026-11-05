@@ -32,7 +32,7 @@ export function readWorkbookFromBuffer(buffer: ArrayBuffer, filename: string): X
 export function readBestSheet(
   buffer: ArrayBuffer,
   filename: string,
-): { sheetName: string; rawData: string[][] } {
+): { sheetName: string; rawData: string[][]; numericData: (number | null)[][] } {
   const workbook = readWorkbookFromBuffer(buffer, filename)
 
   let bestSheet = workbook.SheetNames[0]
@@ -54,5 +54,15 @@ export function readBestSheet(
     raw: false,
   })
 
-  return { sheetName: bestSheet, rawData }
+  // True numeric cell values, aligned with rawData (null for text cells). Only
+  // for binary spreadsheets: in a CSV the text is the source and SheetJS's
+  // numeric guess ("12.500" → 12.5) is not trustworthy, so CSV gets all null.
+  const isCsv = (filename.toLowerCase().split('.').pop() ?? '') === 'csv'
+  const numericData: (number | null)[][] = isCsv
+    ? rawData.map((r) => r.map(() => null))
+    : XLSX.utils
+        .sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: true })
+        .map((r) => r.map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)))
+
+  return { sheetName: bestSheet, rawData, numericData }
 }
