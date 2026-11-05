@@ -19,6 +19,14 @@ describe('unitLabel', () => {
     expect(unitLabel('m3', 'en')).toBe('m3')
   })
 
+  it('renders an empty or missing unit as empty text in both languages', () => {
+    for (const lang of ['sv', 'en'] as const) {
+      expect(unitLabel('', lang)).toBe('')
+      expect(unitLabel(null, lang)).toBe('')
+      expect(unitLabel(undefined, lang)).toBe('')
+    }
+  })
+
   it('prints a Swedish document exactly as stored', () => {
     expect(unitLabel('st', 'sv')).toBe('st')
     expect(unitLabel('tim', 'sv')).toBe('tim')

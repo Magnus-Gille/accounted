@@ -508,7 +508,9 @@ export const CreateInvoiceItemSchema = z
     line_type: z.enum(['product', 'text']).optional(),
     description: z.string().max(2000),
     quantity: z.number(),
-    unit: z.string(),
+    // '' = the line has no unit (a historical Fortnox row may carry none);
+    // trimmed so whitespace-only collapses to the same "no unit" value.
+    unit: z.string().trim(),
     unit_price: z.number(),
     // Percentage discount on the line (rabatt i procent per artikelrad).
     // line_total and vat_amount are computed NET of this server-side
@@ -595,9 +597,6 @@ export const CreateInvoiceItemSchema = z
     }
     if (item.quantity <= 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: 'Quantity must be positive' })
-    }
-    if (item.unit.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['unit'], message: 'Unit is required' })
     }
   })
 

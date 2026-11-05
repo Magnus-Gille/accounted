@@ -488,9 +488,7 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
       if (!(item.quantity >= 0.01)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: t('validation_quantity_min') })
       }
-      if (item.unit.trim().length === 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['unit'], message: t('validation_unit_required') })
-      }
+      // An empty unit is valid: the line simply has no unit (no invented 'st').
       // Negative unit prices are allowed: discount lines (e.g. "Rabatt -100")
       // are a valid way to reduce an invoice total. The backend schema accepts
       // them too (see lib/api/schemas.ts CreateInvoiceItemSchema). An empty

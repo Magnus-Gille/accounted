@@ -46,6 +46,19 @@ export const UNIT_CODES: Record<string, string> = {
   vecka: 'WEE',
 }
 
+/**
+ * UBL requires a unitCode on InvoicedQuantity. A line with no unit (a historical
+ * row mirrored without one) is exported with UN/ECE Rec 20 "C62" (one / unit),
+ * the neutral code for a quantity without a measure. Only the empty unit gets
+ * this; a typed-but-unmapped unit is still rejected as UNIT_UNSUPPORTED.
+ */
+export const NO_UNIT_CODE = 'C62'
+
+export function peppolUnitCode(unit: string | null | undefined): string | undefined {
+  const trimmed = (unit ?? '').trim()
+  return trimmed === '' ? NO_UNIT_CODE : UNIT_CODES[unit as string]
+}
+
 export interface PeppolValidationIssue {
   code: string
   field: string
@@ -433,7 +446,7 @@ function prepareInvoice(input: PeppolInvoiceInput):
         `Invoice line ${index + 1} must have a description, positive quantity, and valid amounts.`,
       ))
     }
-    if (!UNIT_CODES[item.unit]) {
+    if (!peppolUnitCode(item.unit)) {
       issues.push(validationIssue(
         'UNIT_UNSUPPORTED', `${lineField}.unit`,
         `Enheten på fakturarad ${index + 1} stöds inte av Peppol-exporten.`,
@@ -655,7 +668,7 @@ function renderInvoiceXml(input: PeppolInvoiceInput, prepared: PreparedInvoice):
     return [
     '  <cac:InvoiceLine>',
     `    <cbc:ID>${index + 1}</cbc:ID>`,
-    `    <cbc:InvoicedQuantity unitCode="${UNIT_CODES[item.unit]}">${formatDecimal(item.quantity)}</cbc:InvoicedQuantity>`,
+    `    <cbc:InvoicedQuantity unitCode="${peppolUnitCode(item.unit)}">${formatDecimal(item.quantity)}</cbc:InvoicedQuantity>`,
     `    <cbc:LineExtensionAmount currencyID="SEK">${formatMoney(item.line_total)}</cbc:LineExtensionAmount>`,
     ...allowance,
     '    <cac:Item>',

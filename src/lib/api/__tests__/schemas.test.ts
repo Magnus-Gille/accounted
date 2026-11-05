@@ -642,6 +642,22 @@ describe('CreateInvoiceItemSchema', () => {
     }
   })
 
+  it('accepts a product row with an empty unit and keeps it empty', () => {
+    const result = CreateInvoiceItemSchema.safeParse(validInvoiceItem({ unit: '' }))
+    expect(result.success).toBe(true)
+    expect(result.data?.unit).toBe('')
+  })
+
+  it('collapses a whitespace-only unit to empty (no unit)', () => {
+    const result = CreateInvoiceItemSchema.safeParse(validInvoiceItem({ unit: '  ' }))
+    expect(result.success).toBe(true)
+    expect(result.data?.unit).toBe('')
+  })
+
+  it('rejects a null unit (empty string is the no-unit representation)', () => {
+    expect(CreateInvoiceItemSchema.safeParse(validInvoiceItem({ unit: null })).success).toBe(false)
+  })
+
   it('rejects a product row with an empty description', () => {
     const result = CreateInvoiceItemSchema.safeParse(validInvoiceItem({ description: '   ' }))
     expect(result.success).toBe(false)
