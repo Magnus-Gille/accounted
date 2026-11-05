@@ -167,18 +167,45 @@ describe('POST /api/import/articles/execute', () => {
     ])
   })
 
-  it('merge mode: a placeholder price (parsed as 0) does not overwrite an existing price', async () => {
+  it('merge mode: an unspecified price (null, e.g. a "-" cell) leaves the existing price untouched', async () => {
     mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
     enqueue({ data: { id: 'x', name: 'New name', article_number: 'A-1' } })
 
     await POST(makeRequest({
-      rows: [row({ article_number: 'A-1', name: 'New name', price_excl_vat: 0 })],
+      rows: [row({ article_number: 'A-1', name: 'New name', price_excl_vat: null })],
       update_duplicates: true,
     }))
 
     const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
     expect(payload).toMatchObject({ name: 'New name' })
     expect(payload).not.toHaveProperty('price_excl_vat')
+  })
+
+  it('merge mode: an explicit 0 price overwrites the existing price', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
+    enqueue({ data: { id: 'x', name: 'Old', article_number: 'A-1' } })
+
+    await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', name: 'Old', price_excl_vat: 0 })],
+      update_duplicates: true,
+    }))
+
+    const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ price_excl_vat: 0 })
+  })
+
+  it('rejects a row with an invalid (negative) price before importing or updating anything', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1' }])
+
+    const res = await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', price_excl_vat: -5 })],
+      update_duplicates: true,
+    }))
+    const { status } = await parseJsonResponse(res)
+
+    expect(status).toBe(400)
+    expect(findCall('articles', 'update')).toBeUndefined()
+    expect(findCall('articles', 'insert')).toBeUndefined()
   })
 
   it('merge mode: a positive price overwrites the existing price', async () => {

@@ -2,7 +2,6 @@ import type { ArticleType } from '@/types'
 import { makeNotice, type ImportNotice } from '@/lib/import/notices'
 import { detectArticleColumns } from './column-detector'
 import { cellOrNull } from '../shared/column-utils'
-import { parseAmount } from '../opening-balance/parser'
 import { readBestSheet } from '../shared/workbook-reader'
 import type { DetectedArticleColumns, ParsedArticleRow } from './types'
 import { deductionTypeForWorkType, normalizeHouseworkType } from '@/lib/invoices/rot-rut-rules'
@@ -79,6 +78,26 @@ const INCL_VAT_HEADER_RE = /brutto|inkl|incl|gross/i
  * @param filename - Original filename
  * @param columnOverrides - Optional manual column mapping
  */
+const PLACEHOLDER_RE = /^[-\u2013\u2014]$/
+const STRICT_AMOUNT_RE = /^[-+]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:[.,]\d+)?$/
+
+/**
+ * Strict whole-cell amount parse for article prices. Blank or a lone
+ * placeholder (-, en dash, em dash) is null (not specified); a fully numeric
+ * value (space/nbsp thousands, dot thousands before 3 digits, decimal comma or
+ * dot) is a number, including 0; anything else is invalid and never a number
+ * (unlike the lenient parseFloat-based opening-balance parseAmount).
+ */
+function parseStrictAmount(raw: string | null): { value: number | null; invalid: boolean } {
+  if (raw === null) return { value: null, invalid: false }
+  const str = raw.replace(/\s/g, '')
+  if (str === '' || PLACEHOLDER_RE.test(str)) return { value: null, invalid: false }
+  if (!STRICT_AMOUNT_RE.test(str)) return { value: null, invalid: true }
+  const num = Number(str.replace(/\.(?=\d{3}(?!\d))/g, '').replace(',', '.'))
+  if (!Number.isFinite(num)) return { value: null, invalid: true }
+  return { value: Math.round(num * 100) / 100, invalid: false }
+}
+
 export function parseArticlesFile(
   buffer: ArrayBuffer,
   filename: string,
@@ -163,7 +182,7 @@ export function parseArticlesFile(
     const unit = unitRaw
 
     const priceRaw = cell(row, columns.price_col)
-    const price = priceRaw !== null ? parseAmount(priceRaw) : null
+    const { value: price, invalid: priceInvalid } = parseStrictAmount(priceRaw)
 
     // Keep only well-formed ISO 4217 codes; the execute route validates them
     // against the currencies table. null = column absent/blank (imports as SEK).
@@ -189,7 +208,7 @@ export function parseArticlesFile(
     }
 
     const costRaw = cell(row, columns.cost_price_col)
-    const costPrice = costRaw !== null ? parseAmount(costRaw) : null
+    const { value: costPrice, invalid: costInvalid } = parseStrictAmount(costRaw)
 
     const ean = cell(row, columns.ean_col)
     // Canonical work-type code / bare ROT-RUT, or null: a boolean "Rot" column
@@ -211,6 +230,8 @@ export function parseArticlesFile(
     const notes = cell(row, columns.notes_col)
 
     const validationErrors: string[] = []
+    if (priceInvalid) validationErrors.push('Priset är inte ett giltigt belopp')
+    if (costInvalid) validationErrors.push('Inköpspriset är inte ett giltigt belopp')
     if (price !== null && price < 0) validationErrors.push('Priset kan inte vara negativt')
     if (costPrice !== null && costPrice < 0) validationErrors.push('Inköpspriset kan inte vara negativt')
 

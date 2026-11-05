@@ -189,6 +189,52 @@ describe('parseArticlesFile', () => {
     expect(result.rows[0].validation_errors).toContain('Priset kan inte vara negativt')
   })
 
+  describe('strict price parsing', () => {
+    const parsePrices = (cells: string[]) =>
+      parseArticlesFile(
+        buildXlsx([['Benämning', 'Pris'], ...cells.map((c, i) => [`A${i}`, c])]),
+        'strict.xlsx',
+      ).rows
+
+    it('treats blank and lone placeholders as unspecified (null, valid)', () => {
+      for (const r of parsePrices(['', '-', '\u2013', '\u2014', ' - '])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(true)
+      }
+    })
+
+    it('parses full numeric values including explicit zero', () => {
+      const rows = parsePrices(['0', '0,00', '1 234,50', '1\u00a0234,5', '1.234,50', '12.5', '950'])
+      expect(rows.map((r) => r.price_excl_vat)).toEqual([0, 0, 1234.5, 1234.5, 1234.5, 12.5, 950])
+      expect(rows.every((r) => r.is_valid)).toBe(true)
+    })
+
+    it('rejects partially numeric cells as invalid, never as a number', () => {
+      for (const r of parsePrices(['125abc', '1,2,3', 'abc', '12 kr'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+        expect(r.validation_errors).toContain('Priset är inte ett giltigt belopp')
+      }
+    })
+
+    it('keeps a negative price numeric and flagged negative', () => {
+      const [r] = parsePrices(['-50'])
+      expect(r.price_excl_vat).toBe(-50)
+      expect(r.validation_errors).toContain('Priset kan inte vara negativt')
+    })
+
+    it('applies the same strictness to cost price', () => {
+      const rows = parseArticlesFile(
+        buildXlsx([['Benämning', 'Pris', 'Inköpspris'], ['A', '10', '-'], ['B', '10', '5x'], ['C', '10', '0']]),
+        'cost.xlsx',
+      ).rows
+      expect(rows[0].cost_price).toBeNull()
+      expect(rows[1].cost_price).toBeNull()
+      expect(rows[1].validation_errors).toContain('Inköpspriset är inte ett giltigt belopp')
+      expect(rows[2].cost_price).toBe(0)
+    })
+  })
+
   it('returns a warning when zero rows match', () => {
     const buffer = buildXlsx([['Benämning']])
     const result = parseArticlesFile(buffer, 'empty.xlsx')
