@@ -640,8 +640,10 @@ function resolveInvoiceLineFromArticle(
   }
   const description = item.description?.trim() || article?.name
   if (!description) throw new Error(`Item ${lineNo}: description is required (or set article_id)`)
-  const unit = item.unit?.trim() || (article ? article.unit || 'st' : undefined)
-  if (!unit) throw new Error(`Item ${lineNo}: unit is required (st, tim, dag)`)
+  // An explicitly passed unit ('' included, after trim) wins, so a client can
+  // create a unitless line. Omitted unit falls back to the article's unit and
+  // then to '' (no unit), matching the editor/schema.
+  const unit = typeof item.unit === 'string' ? item.unit.trim() : (article?.unit?.trim() ?? '')
   let unitPrice = item.unit_price
   if (unitPrice == null && article) {
     if (article.price_excl_vat == null) {
@@ -8621,8 +8623,8 @@ export const tools: McpTool[] = [
       properties: {
         name: { type: 'string', description: 'Article name (prints on the invoice line).' },
         type: { type: 'string', enum: ['vara', 'tjanst'], description: 'Good (vara) or service (tjanst). Default tjanst.' },
-        unit: { type: 'string', description: 'Unit, e.g. st, tim, kg. Default st.' },
-        price_excl_vat: { type: 'number', description: 'Unit price EXCLUDING VAT.' },
+        unit: { type: ['string', 'null'], description: 'Unit, e.g. st, tim, kg. Omit or null = not specified (no default).' },
+        price_excl_vat: { type: ['number', 'null'], description: 'Unit price EXCLUDING VAT. null = not specified (an invoice line then needs an explicit unit_price).' },
         currency: { type: 'string', description: 'Price currency as ISO 4217 code (e.g. EUR). Default SEK. Pre-fills the invoice currency when the article is added.' },
         vat_rate: { type: 'number', enum: [0, 6, 12, 25], description: 'VAT rate percent. Default 25.' },
         revenue_account: { type: 'string', description: 'Optional BAS class-3 revenue account (e.g. 3041). Omit to derive from VAT.' },
@@ -8641,8 +8643,8 @@ export const tools: McpTool[] = [
     async execute(args, companyId, userId, supabase, actor) {
       const name = (args.name as string)?.trim()
       if (!name) throw new Error('Article name is required.')
-      if (typeof args.price_excl_vat !== 'number') {
-        throw new Error('price_excl_vat is required and must be a number.')
+      if (args.price_excl_vat !== null && typeof args.price_excl_vat !== 'number') {
+        throw new Error('price_excl_vat is required: a number, or null for not specified.')
       }
 
       const params: Record<string, unknown> = {
@@ -8691,8 +8693,8 @@ export const tools: McpTool[] = [
         article_id: { type: 'string', description: 'UUID of the article to update.' },
         name: { type: 'string' },
         type: { type: 'string', enum: ['vara', 'tjanst'] },
-        unit: { type: 'string' },
-        price_excl_vat: { type: 'number' },
+        unit: { type: ['string', 'null'] },
+        price_excl_vat: { type: ['number', 'null'], description: 'null clears the price to not specified.' },
         currency: { type: 'string', description: 'Price currency as ISO 4217 code (e.g. EUR), or omit to leave unchanged.' },
         vat_rate: { type: 'number', enum: [0, 6, 12, 25] },
         revenue_account: { type: 'string', description: 'BAS class-3 revenue account, or omit to leave unchanged.' },

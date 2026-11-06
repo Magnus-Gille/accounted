@@ -59,6 +59,21 @@ describe('buildInvoiceWriteData', () => {
     })
   })
 
+  it('stores an empty unit as-is, never substituting st', async () => {
+    const { supabase, enqueue } = createQueuedMockSupabase()
+    enqueue({ data: { vat_registered: true }, error: null })
+
+    const customer = makeCustomer({ customer_type: 'swedish_business' })
+    const result = await call(enqueue, supabase as unknown as SupabaseClient, customer, {
+      ...baseHeader,
+      items: [{ description: 'Konsult', quantity: 1, unit: '', unit_price: 1000, vat_rate: 25 }],
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.items[0].unit).toBe('')
+  })
+
   it('maps payment_link_url to a concrete trimmed value, null when absent', async () => {
     const { supabase, enqueue } = createQueuedMockSupabase()
     enqueue({ data: { vat_registered: true }, error: null })

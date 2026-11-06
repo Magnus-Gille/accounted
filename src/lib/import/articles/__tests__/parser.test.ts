@@ -108,13 +108,36 @@ describe('parseArticlesFile', () => {
     expect(result.rows[2].type).toBe('tjanst')
   })
 
-  it('falls back to "st" when no unit is given', () => {
+  it('keeps unit and price null (not specified) when the file has neither', () => {
     const buffer = buildXlsx([
       ['Benämning'],
       ['A'],
     ])
     const result = parseArticlesFile(buffer, 'unit.xlsx')
-    expect(result.rows[0].unit).toBe('st')
+    expect(result.rows[0].unit).toBeNull()
+    expect(result.rows[0].price_excl_vat).toBeNull()
+    expect(result.rows[0].is_valid).toBe(true)
+  })
+
+  it('keeps blank unit/price cells null but an explicit 0 price as 0', () => {
+    const buffer = buildXlsx([
+      ['Benämning', 'Enhet', 'Pris'],
+      ['Blank', '', ''],
+      ['Zero', 'st', '0'],
+    ])
+    const result = parseArticlesFile(buffer, 'blank.xlsx')
+    expect(result.rows[0]).toMatchObject({ unit: null, price_excl_vat: null })
+    expect(result.rows[1]).toMatchObject({ unit: 'st', price_excl_vat: 0 })
+  })
+
+  it.each(['-', '\u2013', '\u2014'])('treats a lone %s unit cell as not specified (null)', (placeholder) => {
+    const buffer = buildXlsx([
+      ['Benämning', 'Enhet'],
+      ['A', placeholder],
+    ])
+    const result = parseArticlesFile(buffer, 'placeholder-unit.xlsx')
+    expect(result.rows[0].unit).toBeNull()
+    expect(result.rows[0].is_valid).toBe(true)
   })
 
   it('keeps class 1-3 posting accounts and drops a class-4 account', () => {
@@ -174,6 +197,103 @@ describe('parseArticlesFile', () => {
     const result = parseArticlesFile(buffer, 'neg.xlsx')
     expect(result.rows[0].is_valid).toBe(false)
     expect(result.rows[0].validation_errors).toContain('Priset kan inte vara negativt')
+  })
+
+  describe('strict price parsing', () => {
+    const parsePrices = (cells: string[]) =>
+      parseArticlesFile(
+        buildXlsx([['Benämning', 'Pris'], ...cells.map((c, i) => [`A${i}`, c])]),
+        'strict.xlsx',
+      ).rows
+
+    it('treats blank and lone placeholders as unspecified (null, valid)', () => {
+      for (const r of parsePrices(['', '-', '\u2013', '\u2014', ' - '])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(true)
+      }
+    })
+
+    it('parses full numeric values including explicit zero', () => {
+      const rows = parsePrices(['0', '0,00', '1 234,50', '1\u00a0234,5', '1.234,50', '12.5', '950'])
+      expect(rows.map((r) => r.price_excl_vat)).toEqual([0, 0, 1234.5, 1234.5, 1234.5, 12.5, 950])
+      expect(rows.every((r) => r.is_valid)).toBe(true)
+    })
+
+    it('rejects partially numeric cells as invalid, never as a number', () => {
+      for (const r of parsePrices(['125abc', '1,2,3', 'abc', '12 kr'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+        expect(r.validation_errors).toContain('Priset är inte ett giltigt belopp')
+      }
+    })
+
+    it('keeps a negative price numeric and flagged negative', () => {
+      const [r] = parsePrices(['-50'])
+      expect(r.price_excl_vat).toBe(-50)
+      expect(r.validation_errors).toContain('Priset kan inte vara negativt')
+    })
+
+    it('treats a single d.ddd dot value without comma as ambiguous, never a number', () => {
+      for (const r of parsePrices(['12.500', '2.500', '0.005', '123.456'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+        expect(r.validation_errors).toContain(
+          'Priset är tvetydigt (punkt som tusentalsavgränsare eller decimal?)',
+        )
+      }
+    })
+
+    it('reads dot as thousands only with a decimal comma or 2+ groups', () => {
+      const rows = parsePrices(['1.234,50', '1.234.567', '12.5', '12.50', '12.5000', '1234.567', '12,500'])
+      expect(rows.map((r) => r.price_excl_vat)).toEqual([1234.5, 1234567, 12.5, 12.5, 12.5, 1234.57, 12.5])
+      expect(rows.every((r) => r.is_valid)).toBe(true)
+    })
+
+    it('rejects malformed dot groups', () => {
+      for (const r of parsePrices(['01.234.567', '0.123,45', '1.23.456'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+      }
+    })
+
+    it('accepts only correctly grouped space separators and rejects tabs/newlines', () => {
+      const ok = parsePrices(['1 234', '1\u00a0234,50', '1\u202f234 567', ' 950 ', '1 234.50'])
+      expect(ok.map((r) => r.price_excl_vat)).toEqual([1234, 1234.5, 1234567, 950, 1234.5])
+      for (const r of parsePrices(['12 5', '12\n5', '12\t5', '1 23', '1234 567'])) {
+        expect(r.price_excl_vat).toBeNull()
+        expect(r.is_valid).toBe(false)
+      }
+    })
+
+    it('uses the true numeric value of an xlsx number cell, not its display text', () => {
+      const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Pris'], ['A', 12.5], ['B', '12.500']])
+      ws.B2.z = '0.000' // displays "12.500"
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Artiklar')
+      const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+      const rows = parseArticlesFile(buf, 'num.xlsx').rows
+      expect(rows[0]).toMatchObject({ price_excl_vat: 12.5, is_valid: true })
+      // A text cell "12.500" stays ambiguous.
+      expect(rows[1]).toMatchObject({ price_excl_vat: null, is_valid: false })
+    })
+
+    it('does not trust the numeric guess of a CSV "12.500"', () => {
+      const csv = new TextEncoder().encode('Benämning;Pris\nA;12.500\nB;12.5\n')
+      const rows = parseArticlesFile(csv.buffer as ArrayBuffer, 'p.csv').rows
+      expect(rows[0]).toMatchObject({ price_excl_vat: null, is_valid: false })
+      expect(rows[1]).toMatchObject({ price_excl_vat: 12.5, is_valid: true })
+    })
+
+    it('applies the same strictness to cost price', () => {
+      const rows = parseArticlesFile(
+        buildXlsx([['Benämning', 'Pris', 'Inköpspris'], ['A', '10', '-'], ['B', '10', '5x'], ['C', '10', '0']]),
+        'cost.xlsx',
+      ).rows
+      expect(rows[0].cost_price).toBeNull()
+      expect(rows[1].cost_price).toBeNull()
+      expect(rows[1].validation_errors).toContain('Inköpspriset är inte ett giltigt belopp')
+      expect(rows[2].cost_price).toBe(0)
+    })
   })
 
   it('returns a warning when zero rows match', () => {

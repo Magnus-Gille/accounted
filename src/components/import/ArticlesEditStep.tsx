@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { applyPriceEdit, priceInputValue } from '@/lib/import/articles/price-edit'
 import { Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ArticleType } from '@/types'
@@ -91,15 +92,20 @@ export default function ArticlesEditStep({
     setRows((prev) => prev.filter((r) => r.id !== id))
   }, [])
 
+  // Raw text per row while editing, so a partial "12," is not wiped from the
+  // input; the row's price/errors always come from the complete text.
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({})
+
   const handlePriceChange = useCallback((id: string, raw: string) => {
-    const n = parseFloat(raw.replace(',', '.'))
-    const price = Number.isFinite(n) ? n : 0
-    updateRow(id, {
-      price_excl_vat: price,
-      is_valid: price >= 0,
-      validation_errors: price < 0 ? ['Priset kan inte vara negativt'] : [],
-    })
-  }, [updateRow])
+    setPriceDrafts((prev) => ({ ...prev, [id]: raw }))
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r
+        const { draft: _draft, ...updates } = applyPriceEdit(r.validation_errors, raw)
+        return { ...r, ...updates }
+      }),
+    )
+  }, [])
 
   const handleExecute = () => {
     if (!canContinue) return
@@ -216,7 +222,7 @@ export default function ArticlesEditStep({
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <Input
-                        value={String(row.price_excl_vat)}
+                        value={priceInputValue(priceDrafts[row.id], row.price_excl_vat)}
                         inputMode="decimal"
                         onChange={(e) => handlePriceChange(row.id, e.target.value)}
                         className="h-8 text-right tabular-nums"

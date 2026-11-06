@@ -40,6 +40,8 @@ vi.mock('@/lib/articles/validate-revenue-account', () => ({
   checkRevenueAccount: (...a: unknown[]) => mockCheckRevenueAccount(...a),
 }))
 
+import * as XLSX from 'xlsx'
+import { parseArticlesFile } from '@/lib/import/articles/parser'
 import { POST } from '../execute/route'
 
 const mockUser = { id: 'user-1', email: 'test@test.se' }
@@ -112,6 +114,22 @@ describe('POST /api/import/articles/execute', () => {
     ])
   })
 
+  it('inserts a row without unit and price as null (no st / 0 defaults)', async () => {
+    enqueue({ data: { id: 'a1', name: 'Utan pris', article_number: null } })
+
+    const res = await POST(makeRequest({
+      rows: [row({ name: 'Utan pris', unit: null, price_excl_vat: null })],
+      update_duplicates: false,
+    }))
+    const { status, body } = await parseJsonResponse(res)
+
+    expect(status).toBe(200)
+    expect(body.data.created).toBe(1)
+    expect(findCall('articles', 'insert')).toEqual([
+      expect.objectContaining({ name: 'Utan pris', unit: null, price_excl_vat: null }),
+    ])
+  })
+
   it('skips a duplicate matched by article number when update_duplicates is false', async () => {
     mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Existing', article_number: 'A-1' }])
 
@@ -149,6 +167,125 @@ describe('POST /api/import/articles/execute', () => {
         updated_rows: [{ id: 'x', before: { name: 'Old' }, after: { name: 'New name' } }],
       },
     ])
+  })
+
+  it('merge mode: an unspecified price (null, e.g. a "-" cell) leaves the existing price untouched', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
+    enqueue({ data: { id: 'x', name: 'New name', article_number: 'A-1' } })
+
+    await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', name: 'New name', price_excl_vat: null })],
+      update_duplicates: true,
+    }))
+
+    const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ name: 'New name' })
+    expect(payload).not.toHaveProperty('price_excl_vat')
+  })
+
+  it('merge mode: an explicit 0 price overwrites the existing price', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
+    enqueue({ data: { id: 'x', name: 'Old', article_number: 'A-1' } })
+
+    await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', name: 'Old', price_excl_vat: 0 })],
+      update_duplicates: true,
+    }))
+
+    const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ price_excl_vat: 0 })
+  })
+
+  it('merge mode: leaves the existing unit untouched even when the file has one', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', unit: 'st' }])
+    enqueue({ data: { id: 'x', name: 'New name', article_number: 'A-1' } })
+
+    await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', name: 'New name', unit: 'tim' })],
+      update_duplicates: true,
+    }))
+
+    const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ name: 'New name' })
+    expect(payload).not.toHaveProperty('unit')
+  })
+
+  it('a "-" unit cell imports a new article without a unit', async () => {
+    const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Enhet', 'Pris'], ['Ny', '-', '10']])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Artiklar')
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const parsed = parseArticlesFile(buf, 'u.xlsx').rows[0]
+    enqueue({ data: { id: 'n1', name: 'Ny', article_number: null } })
+
+    await POST(makeRequest({ rows: [parsed], update_duplicates: false }))
+
+    const [payload] = findCall('articles', 'insert') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ name: 'Ny', unit: null })
+  })
+
+  describe('parser output fed into merge mode', () => {
+    function parseOne(priceCell: string) {
+      const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Artikelnummer', 'Pris'], ['Old', 'A-1', priceCell]])
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Artiklar')
+      const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+      return parseArticlesFile(buf, 'p.xlsx').rows[0]
+    }
+
+    async function merge(priceCell: string) {
+      mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
+      enqueue({ data: { id: 'x', name: 'Old', article_number: 'A-1' } })
+      const parsed = parseOne(priceCell)
+      await POST(makeRequest({ rows: [parsed], update_duplicates: true }))
+      return { parsed, update: (findCall('articles', 'update') as Record<string, unknown>[] | undefined)?.[0] }
+    }
+
+    it('"-" leaves the existing price untouched', async () => {
+      const { parsed, update } = await merge('-')
+      expect(parsed.is_valid).toBe(true)
+      expect(update ?? {}).not.toHaveProperty('price_excl_vat')
+    })
+
+    it('"0" overwrites with an explicit zero', async () => {
+      const { parsed, update } = await merge('0')
+      expect(parsed.is_valid).toBe(true)
+      expect(update).toMatchObject({ price_excl_vat: 0 })
+    })
+
+    it.each(['12.500', '12 5'])('%s is flagged invalid and never becomes a price', async (cell) => {
+      const { parsed, update } = await merge(cell)
+      expect(parsed.is_valid).toBe(false)
+      expect(parsed.price_excl_vat).toBeNull()
+      expect(update ?? {}).not.toHaveProperty('price_excl_vat')
+    })
+  })
+
+  it('rejects a row with an invalid (negative) price before importing or updating anything', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1' }])
+
+    const res = await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', price_excl_vat: -5 })],
+      update_duplicates: true,
+    }))
+    const { status } = await parseJsonResponse(res)
+
+    expect(status).toBe(400)
+    expect(findCall('articles', 'update')).toBeUndefined()
+    expect(findCall('articles', 'insert')).toBeUndefined()
+  })
+
+  it('merge mode: a positive price overwrites the existing price', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', price_excl_vat: 500 }])
+    enqueue({ data: { id: 'x', name: 'Old', article_number: 'A-1' } })
+
+    await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', name: 'Old', price_excl_vat: 750 })],
+      update_duplicates: true,
+    }))
+
+    const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ price_excl_vat: 750 })
   })
 
   it('matches a duplicate by name (case-insensitive)', async () => {

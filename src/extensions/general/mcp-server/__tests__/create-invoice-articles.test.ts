@@ -112,6 +112,68 @@ describe('gnubok_create_invoice: article_id on items', () => {
     expect(result.preview.total).toBe(4500)
   })
 
+  it('requires an explicit unit_price when the article has no price (null, not 0)', async () => {
+    const { supabase, enqueue } = createQueuedMockSupabase()
+    enqueue({ data: CUSTOMER, error: null })
+    enqueue({ data: [{ ...ARTICLE, price_excl_vat: null }], error: null })
+
+    await expect(
+      createInvoice.execute(
+        { customer_id: 'cust-1', invoice_date: '2026-05-12', items: [{ article_id: ARTICLE_ID, quantity: 1 }] },
+        'company-1',
+        'user-1',
+        supabase as never,
+      ),
+    ).rejects.toThrow(/has no price; pass unit_price explicitly/)
+  })
+
+  type StagedResult = { staged: boolean; preview: { items: Array<Record<string, unknown>> } }
+
+  async function stageItems(
+    items: Array<Record<string, unknown>>,
+    articleRows: Array<Record<string, unknown>> | null,
+  ) {
+    const { supabase, enqueue } = createQueuedMockSupabase()
+    if (articleRows) {
+      enqueueHappyPath(enqueue, CUSTOMER, articleRows)
+    } else {
+      enqueue({ data: CUSTOMER, error: null })
+      enqueue({ data: { vat_registered: true }, error: null })
+      enqueue({ data: null, error: null })
+      enqueue({ data: null, error: null })
+      enqueue({ data: { id: 'op-1' }, error: null })
+    }
+    return (await createInvoice.execute(
+      { customer_id: 'cust-1', invoice_date: '2026-05-12', items },
+      'company-1',
+      'user-1',
+      supabase as never,
+    )) as StagedResult
+  }
+
+  it('does not invent "st" when the article has no unit and none is passed (unitless line)', async () => {
+    const result = await stageItems([{ article_id: ARTICLE_ID, quantity: 1 }], [{ ...ARTICLE, unit: null }])
+    expect(result.staged).toBe(true)
+    expect(result.preview.items[0].unit).toBe('')
+  })
+
+  it('an explicit empty unit yields a unitless line even when the article has a unit', async () => {
+    const result = await stageItems([{ article_id: ARTICLE_ID, quantity: 1, unit: '  ' }], [ARTICLE])
+    expect(result.staged).toBe(true)
+    expect(result.preview.items[0].unit).toBe('')
+  })
+
+  it('an omitted unit still falls back to the article unit', async () => {
+    const result = await stageItems([{ article_id: ARTICLE_ID, quantity: 1 }], [ARTICLE])
+    expect(result.preview.items[0].unit).toBe('tim')
+  })
+
+  it('a free-form line without a unit is unitless', async () => {
+    const result = await stageItems([{ description: 'Frakt', quantity: 1, unit_price: 100, vat_rate: 25 }], null)
+    expect(result.staged).toBe(true)
+    expect(result.preview.items[0].unit).toBe('')
+  })
+
   it('lets explicit line values win over the article', async () => {
     const { supabase, enqueue } = createQueuedMockSupabase()
     enqueueHappyPath(enqueue, CUSTOMER, [ARTICLE])
@@ -282,7 +344,7 @@ describe('gnubok_create_invoice: article_id on items', () => {
     expect(result.preview.total).toBe(1187.5)
   })
 
-  it('still requires description, unit and unit_price on a line without article_id', async () => {
+  it('still requires description and unit_price on a line without article_id', async () => {
     const { supabase, enqueue } = createQueuedMockSupabase()
     enqueue({ data: CUSTOMER, error: null })
 

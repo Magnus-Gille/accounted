@@ -2,9 +2,10 @@ import type { ArticleType } from '@/types'
 import { makeNotice, type ImportNotice } from '@/lib/import/notices'
 import { detectArticleColumns } from './column-detector'
 import { cellOrNull } from '../shared/column-utils'
-import { parseAmount } from '../opening-balance/parser'
 import { readBestSheet } from '../shared/workbook-reader'
 import type { DetectedArticleColumns, ParsedArticleRow } from './types'
+import { ARTICLE_ERR } from './validation-messages'
+import { isPlaceholderCell, parseStrictAmount } from './strict-amount'
 import { deductionTypeForWorkType, normalizeHouseworkType } from '@/lib/invoices/rot-rut-rules'
 
 const VALID_VAT_RATES = [0, 6, 12, 25] as const
@@ -79,6 +80,7 @@ const INCL_VAT_HEADER_RE = /brutto|inkl|incl|gross/i
  * @param filename - Original filename
  * @param columnOverrides - Optional manual column mapping
  */
+
 export function parseArticlesFile(
   buffer: ArrayBuffer,
   filename: string,
@@ -94,7 +96,7 @@ export function parseArticlesFile(
   warnings: string[]
   notices: ImportNotice[]
 } {
-  const { sheetName, rawData } = readBestSheet(buffer, filename)
+  const { sheetName, rawData, numericData } = readBestSheet(buffer, filename)
 
   if (rawData.length < 2) {
     const fallbackColumns: DetectedArticleColumns = columnOverrides ?? {
@@ -136,6 +138,11 @@ export function parseArticlesFile(
   const cell = (row: string[], col: number | null): string | null =>
     col !== null ? cellOrNull(row[col]) : null
 
+  // Real numeric value of a spreadsheet cell (rawData row index, header = 0).
+  const dataRowStart = 1
+  const numericAt = (rowIdx: number, col: number | null): number | null =>
+    col !== null ? (numericData[rowIdx]?.[col] ?? null) : null
+
   // Surface incl-VAT price columns once for the whole file.
   if (columns.price_col !== null && INCL_VAT_HEADER_RE.test(headers[columns.price_col] ?? '')) {
     warnings.push(
@@ -159,10 +166,15 @@ export function parseArticlesFile(
     const nameEn = cell(row, columns.name_en_col)
     const type = normalizeArticleType(cell(row, columns.type_col))
     const unitRaw = cell(row, columns.unit_col)
-    const unit = unitRaw ?? 'st'
+    // Absent or placeholder unit stays null ("not specified"), never a hidden 'st'.
+    const unit = isPlaceholderCell(unitRaw) ? null : unitRaw
 
     const priceRaw = cell(row, columns.price_col)
-    const price = priceRaw !== null ? parseAmount(priceRaw) : 0
+    const {
+      value: price,
+      invalid: priceInvalid,
+      ambiguous: priceAmbiguous,
+    } = parseStrictAmount(priceRaw, numericAt(dataRowStart + i, columns.price_col))
 
     // Keep only well-formed ISO 4217 codes; the execute route validates them
     // against the currencies table. null = column absent/blank (imports as SEK).
@@ -188,7 +200,11 @@ export function parseArticlesFile(
     }
 
     const costRaw = cell(row, columns.cost_price_col)
-    const costPrice = costRaw !== null ? parseAmount(costRaw) : null
+    const {
+      value: costPrice,
+      invalid: costInvalid,
+      ambiguous: costAmbiguous,
+    } = parseStrictAmount(costRaw, numericAt(dataRowStart + i, columns.cost_price_col))
 
     const ean = cell(row, columns.ean_col)
     // Canonical work-type code / bare ROT-RUT, or null: a boolean "Rot" column
@@ -210,8 +226,12 @@ export function parseArticlesFile(
     const notes = cell(row, columns.notes_col)
 
     const validationErrors: string[] = []
-    if (price < 0) validationErrors.push('Priset kan inte vara negativt')
-    if (costPrice !== null && costPrice < 0) validationErrors.push('Inköpspriset kan inte vara negativt')
+    if (priceInvalid) validationErrors.push(ARTICLE_ERR.priceInvalid)
+    if (priceAmbiguous) validationErrors.push(ARTICLE_ERR.priceAmbiguous)
+    if (costInvalid) validationErrors.push(ARTICLE_ERR.costInvalid)
+    if (costAmbiguous) validationErrors.push(ARTICLE_ERR.costAmbiguous)
+    if (price !== null && price < 0) validationErrors.push(ARTICLE_ERR.priceNegative)
+    if (costPrice !== null && costPrice < 0) validationErrors.push(ARTICLE_ERR.costNegative)
 
     rows.push({
       row_index: i + 2, // 1-based + header

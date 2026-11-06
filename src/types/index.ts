@@ -1195,9 +1195,10 @@ export interface Article {
   /** English benämning for English-language invoices. */
   name_en: string | null
   type: ArticleType
-  unit: string
-  /** Always stored EXCLUDING VAT. */
-  price_excl_vat: number
+  /** null = not specified (no hidden 'st' default). */
+  unit: string | null
+  /** Always stored EXCLUDING VAT. null = not specified (not 0). */
+  price_excl_vat: number | null
   /** Default line VAT rate as an integer percent: 25 | 12 | 6 | 0. */
   vat_rate: number
   /** Default price currency (ISO 4217 code from the currencies table);
@@ -1221,8 +1222,8 @@ export interface Article {
 export interface CreateArticleInput {
   name: string
   type?: ArticleType
-  unit?: string
-  price_excl_vat: number
+  unit?: string | null
+  price_excl_vat: number | null
   vat_rate?: number
   currency?: string
   revenue_account?: string | null

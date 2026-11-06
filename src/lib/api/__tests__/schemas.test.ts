@@ -24,6 +24,7 @@ import {
   DocumentUploadSourceSchema,
   // Invoice schemas
   CreateInvoiceItemSchema,
+  SelfBillingInvoiceItemSchema,
   CreateInvoiceSchema,
   UpdateInvoiceSchema,
   CreateCreditNoteSchema,
@@ -640,6 +641,22 @@ describe('CreateInvoiceItemSchema', () => {
       const result = CreateInvoiceItemSchema.safeParse(validInvoiceItem({ brf_org_number: value }))
       expect(result.success).toBe(false)
     }
+  })
+
+  it('accepts a product row with an empty unit and keeps it empty', () => {
+    const result = CreateInvoiceItemSchema.safeParse(validInvoiceItem({ unit: '' }))
+    expect(result.success).toBe(true)
+    expect(result.data?.unit).toBe('')
+  })
+
+  it('collapses a whitespace-only unit to empty (no unit)', () => {
+    const result = CreateInvoiceItemSchema.safeParse(validInvoiceItem({ unit: '  ' }))
+    expect(result.success).toBe(true)
+    expect(result.data?.unit).toBe('')
+  })
+
+  it('rejects a null unit (empty string is the no-unit representation)', () => {
+    expect(CreateInvoiceItemSchema.safeParse(validInvoiceItem({ unit: null })).success).toBe(false)
   })
 
   it('rejects a product row with an empty description', () => {
@@ -3573,5 +3590,31 @@ describe('CreateJournalEntryLineSchema: cost_center/project aliases follow the b
       const result = CreateJournalEntryLineSchema.safeParse(line(bad))
       expect(result.success).toBe(false)
     }
+  })
+})
+
+describe('SelfBillingInvoiceItemSchema unit', () => {
+  const item = (extra: Record<string, unknown> = {}) => ({
+    description: 'Konsulttjänst',
+    quantity: 1,
+    unit_price: 100,
+    ...extra,
+  })
+
+  it('accepts an empty unit and stores it as an empty string', () => {
+    const r = SelfBillingInvoiceItemSchema.safeParse(item({ unit: '' }))
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.unit).toBe('')
+  })
+
+  it('trims the unit; whitespace-only collapses to empty', () => {
+    const a = SelfBillingInvoiceItemSchema.parse(item({ unit: ' tim ' }))
+    const b = SelfBillingInvoiceItemSchema.parse(item({ unit: '   ' }))
+    expect(a.unit).toBe('tim')
+    expect(b.unit).toBe('')
+  })
+
+  it('does not invent "st" when the unit is omitted', () => {
+    expect(SelfBillingInvoiceItemSchema.parse(item()).unit).toBe('')
   })
 })

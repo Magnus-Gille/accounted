@@ -43,6 +43,14 @@ const houseworkTypeUpdate = z.preprocess(
   houseworkCode.nullable().optional(),
 )
 
+// Update unit: omitted stays undefined (untouched); null / '' / whitespace mean
+// "clear to not specified" and arrive as null (commitUpdateArticle drops only
+// undefined keys, so null reaches the column).
+const unitUpdate = z.preprocess(
+  (v) => (v == null || (typeof v === 'string' && v.trim() === '') ? (v === undefined ? undefined : null) : v),
+  z.string().trim().max(32).nullable().optional(),
+)
+
 const trimmedName = z.preprocess(
   (v) => (typeof v === 'string' ? v.trim() : v),
   z.string().min(1, 'Article name is required').max(200),
@@ -60,7 +68,8 @@ export const CreateArticleParamsSchema = z.object({
   name: trimmedName,
   type: z.enum(['vara', 'tjanst']).default('tjanst'),
   unit: optString(32),
-  price_excl_vat: z.number().nonnegative(),
+  // null = "not specified" (preserved, not coerced to 0).
+  price_excl_vat: z.number().nonnegative().nullable(),
   currency: currencyCode,
   vat_rate: vatRatePercent.default(25),
   revenue_account: invoicePostingAccount.nullable().optional(),
@@ -76,8 +85,8 @@ export const UpdateArticleParamsSchema = z.object({
   article_id: z.string().uuid(),
   name: trimmedName.optional(),
   type: z.enum(['vara', 'tjanst']).optional(),
-  unit: optString(32),
-  price_excl_vat: z.number().nonnegative().optional(),
+  unit: unitUpdate,
+  price_excl_vat: z.number().nonnegative().nullable().optional(),
   currency: currencyCode,
   vat_rate: vatRatePercent.optional(),
   revenue_account: invoicePostingAccount.nullable().optional(),

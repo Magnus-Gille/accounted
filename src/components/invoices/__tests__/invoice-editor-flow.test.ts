@@ -81,12 +81,9 @@ describe('deriveNextStep priority order', () => {
       field: 'quantity',
     })
     items[2].quantity = 2
+    // An empty unit is a valid "no unit" row, not an incomplete one.
     items[2].unit = ''
-    expect(deriveNextStep(stepInput({ items }))).toEqual({
-      kind: 'row_incomplete',
-      index: 2,
-      field: 'unit',
-    })
+    expect(deriveNextStep(stepInput({ items })).kind).not.toBe('row_incomplete')
     items[2].unit = 'st'
     items[2].unit_price = NaN
     expect(deriveNextStep(stepInput({ items }))).toEqual({

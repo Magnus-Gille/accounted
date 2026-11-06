@@ -223,6 +223,16 @@ describe('generatePeppolBisBillingInvoice', () => {
     ]))
   })
 
+  it('exports a line with no unit under the neutral C62 code, never "undefined"', () => {
+    const input = makeValidInput()
+    input.items = input.items.map((item) => ({ ...item, unit: '' }))
+    const result = generatePeppolBisBillingInvoice(input)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.xml).toContain('unitCode="C62"')
+    expect(result.xml).not.toContain('undefined')
+  })
+
   it('exports per-line VAT rounding as BT-114 instead of rejecting it (#2544)', () => {
     // 3 × 99,99 at 25%: the creation path stores 25,00 per line (75,00 total),
     // EN 16931 BR-CO-17 derives 299,97 × 25% = 74,99 for the category. The öre

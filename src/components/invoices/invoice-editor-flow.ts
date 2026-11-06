@@ -122,7 +122,7 @@ export function deriveNextStep(input: NextStepInput): NextStep {
     if (!item.description?.trim()) return { kind: 'row_incomplete', index, field: 'description' }
     // Mirrors the schema: quantity >= 0.01 (NaN fails the comparison too).
     if (!((item.quantity ?? 0) >= 0.01)) return { kind: 'row_incomplete', index, field: 'quantity' }
-    if (!item.unit?.trim()) return { kind: 'row_incomplete', index, field: 'unit' }
+    // An empty unit is valid: the line simply has no unit.
     // Negative prices are lawful discount lines; only a non-number blocks.
     if (!Number.isFinite(item.unit_price ?? 0)) {
       return { kind: 'row_incomplete', index, field: 'unit_price' }

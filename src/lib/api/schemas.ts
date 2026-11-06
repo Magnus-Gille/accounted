@@ -508,7 +508,9 @@ export const CreateInvoiceItemSchema = z
     line_type: z.enum(['product', 'text']).optional(),
     description: z.string().max(2000),
     quantity: z.number(),
-    unit: z.string(),
+    // '' = the line has no unit (a historical Fortnox row may carry none);
+    // trimmed so whitespace-only collapses to the same "no unit" value.
+    unit: z.string().trim(),
     unit_price: z.number(),
     // Percentage discount on the line (rabatt i procent per artikelrad).
     // line_total and vat_amount are computed NET of this server-side
@@ -595,9 +597,6 @@ export const CreateInvoiceItemSchema = z
     }
     if (item.quantity <= 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: 'Quantity must be positive' })
-    }
-    if (item.unit.length === 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['unit'], message: 'Unit is required' })
     }
   })
 
@@ -1010,8 +1009,11 @@ export const HouseworkTypeSchema = z
 export const CreateArticleSchema = z.object({
   name: z.string().min(1, 'Article name is required').max(200),
   type: ArticleTypeSchema.optional(),
-  unit: z.string().min(1).max(32).optional(),
-  price_excl_vat: nonNegativeAmount,
+  // null/omitted = "not specified" (no hidden 'st' default).
+  unit: z.string().trim().min(1).max(32).nullable().optional(),
+  // Key stays required (explicit decision), but null = "not specified" and
+  // is preserved instead of being coerced to 0.
+  price_excl_vat: nonNegativeAmount.nullable(),
   vat_rate: vatRatePercent.optional(),
   // Default price currency; omitted = SEK. Pre-fills a new invoice's currency.
   // Constrained to the same CurrencySchema enum invoices use, which mirrors the
@@ -1046,7 +1048,9 @@ export const UpdateArticleSchema = CreateArticleSchema.partial().extend({
 export const SelfBillingInvoiceItemSchema = z.object({
   description: z.string().min(1, 'Item description is required'),
   quantity: z.number().positive('Quantity must be positive'),
-  unit: z.string().min(1, 'Unit is required').default('st'),
+  // '' = no unit (same representation as CreateInvoiceItemSchema); trimmed so
+  // whitespace-only collapses to it. Omitted = no unit, never a hidden 'st'.
+  unit: z.string().trim().default(''),
   unit_price: z.number(),
   vat_rate: z
     .union([z.literal(0), z.literal(6), z.literal(12), z.literal(25)])
@@ -3635,8 +3639,8 @@ const ImportedArticleRowSchema = z.object({
   name_en: z.string().nullable(),
   article_number: z.string().nullable(),
   type: ArticleTypeSchema,
-  unit: z.string(),
-  price_excl_vat: nonNegativeAmount,
+  unit: z.string().nullable(),
+  price_excl_vat: nonNegativeAmount.nullable(),
   // ISO 4217 shape only; the execute route validates against the currencies
   // table and drops unknown codes (mirrors revenue_account). Optional so rows
   // parsed before this field existed still validate.

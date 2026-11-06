@@ -51,6 +51,7 @@ import {
   type NextStep,
 } from '@/components/invoices/invoice-editor-flow'
 import { sortArticles } from '@/lib/articles/sort'
+import { articlePickerPriceLabel } from '@/lib/articles/picker-price-label'
 import ArticleCombobox from '@/components/invoices/ArticleCombobox'
 import { getAmountToPay } from '@/lib/invoices/rounding'
 import { computeLineNet, hasLineDiscount } from '@/lib/invoices/line-amounts'
@@ -488,9 +489,7 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
       if (!(item.quantity >= 0.01)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['quantity'], message: t('validation_quantity_min') })
       }
-      if (item.unit.trim().length === 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['unit'], message: t('validation_unit_required') })
-      }
+      // An empty unit is valid: the line simply has no unit (no invented 'st').
       // Negative unit prices are allowed: discount lines (e.g. "Rabatt -100")
       // are a valid way to reduce an invoice total. The backend schema accepts
       // them too (see lib/api/schemas.ts CreateInvoiceItemSchema). An empty
@@ -1015,8 +1014,15 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
     if (!a) return
     setValue(`items.${index}.article_id`, a.id, { shouldDirty: true })
     setValue(`items.${index}.description`, a.name, { shouldValidate: true, shouldDirty: true })
-    if (a.unit) setValue(`items.${index}.unit`, a.unit, { shouldDirty: true })
-    setValue(`items.${index}.unit_price`, Number(a.price_excl_vat) || 0, { shouldValidate: true, shouldDirty: true })
+    // No hidden defaults: an article without a unit clears the line unit and an
+    // article without a price leaves the price empty (NaN, rejected by the
+    // schema), so the user must enter both explicitly. A stored 0 stays 0.
+    setValue(`items.${index}.unit`, a.unit ?? '', { shouldValidate: true, shouldDirty: true })
+    setValue(
+      `items.${index}.unit_price`,
+      a.price_excl_vat == null ? Number.NaN : Number(a.price_excl_vat),
+      { shouldValidate: true, shouldDirty: true },
+    )
     // Only adopt the article's VAT rate when it belongs to the customer's
     // DEFAULT set, never to the wider permitted set. An article's stored rate is
     // its domestic rate; nothing on it says the supply is one of the ML 6 kap.
@@ -1164,8 +1170,8 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: item.description.trim(),
-          unit: item.unit || 'st',
-          price_excl_vat: Number(item.unit_price) || 0,
+          unit: item.unit || null,
+          price_excl_vat: Number.isFinite(Number(item.unit_price)) ? Number(item.unit_price) : null,
           vat_rate: item.vat_rate ?? 25,
           // The typed unit price is in the invoice's currency: without this an
           // EUR invoice line becomes an SEK article with the EUR number.
@@ -4400,7 +4406,7 @@ export default function InvoiceEditor(props: InvoiceEditorProps = { mode: 'creat
                           {a.article_number ? `${a.article_number}: ${a.name}` : a.name}
                         </span>
                         <span className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
-                          {formatCurrency(Number(a.price_excl_vat) || 0, (a.currency as Currency) || watchCurrency)}/{a.unit || 'st'} &middot; {a.vat_rate} %
+                          {articlePickerPriceLabel(a, (a.currency as Currency) || watchCurrency)} &middot; {a.vat_rate} %
                         </span>
                       </button>
                     ))}

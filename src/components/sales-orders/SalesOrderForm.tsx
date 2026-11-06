@@ -28,6 +28,7 @@ import { sortArticles } from '@/lib/articles/sort'
 import { computeLineNet } from '@/lib/invoices/line-amounts'
 import UnitPicker from '@/components/invoices/UnitPicker'
 import { roundOre } from '@/lib/money'
+import { hasLineWithMissingPrice } from './line-validation'
 import { getErrorMessage, type ErrorLocale } from '@/lib/errors/get-error-message'
 import { cn, formatCurrency } from '@/lib/utils'
 import { formatQty, todayIso } from '@/components/sales-orders/labels'
@@ -246,8 +247,9 @@ export default function SalesOrderForm({ mode, initial }: SalesOrderFormProps) {
     updateLine(key, {
       article_id: article.id,
       description: article.name,
-      unit: article.unit,
-      unit_price: String(article.price_excl_vat),
+      // Not specified stays empty (no 'st' / '0' default); the user fills it in.
+      unit: article.unit ?? '',
+      unit_price: article.price_excl_vat == null ? '' : String(article.price_excl_vat),
       vat_rate: rateAllowed ? article.vat_rate : vatPlan.defaultRate,
       revenue_account: article.revenue_account,
     })
@@ -304,6 +306,9 @@ export default function SalesOrderForm({ mode, initial }: SalesOrderFormProps) {
     const productLines = lines.filter((l) => l.line_type === 'product')
     if (productLines.length === 0 || productLines.some((l) => !l.description.trim())) {
       nextErrors.lines = t('validation_lines_required')
+    } else if (hasLineWithMissingPrice(lines)) {
+      // An unpriced article leaves the price empty; never save that as 0.
+      nextErrors.lines = t('validation_unit_price_required')
     }
     setErrors(nextErrors)
     if (nextErrors.customer || nextErrors.lines) return
