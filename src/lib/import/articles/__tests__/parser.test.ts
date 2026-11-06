@@ -130,6 +130,16 @@ describe('parseArticlesFile', () => {
     expect(result.rows[1]).toMatchObject({ unit: 'st', price_excl_vat: 0 })
   })
 
+  it.each(['-', '\u2013', '\u2014'])('treats a lone %s unit cell as not specified (null)', (placeholder) => {
+    const buffer = buildXlsx([
+      ['Benämning', 'Enhet'],
+      ['A', placeholder],
+    ])
+    const result = parseArticlesFile(buffer, 'placeholder-unit.xlsx')
+    expect(result.rows[0].unit).toBeNull()
+    expect(result.rows[0].is_valid).toBe(true)
+  })
+
   it('keeps class 1-3 posting accounts and drops a class-4 account', () => {
     const buffer = buildXlsx([
       ['Benämning', 'Försäljningskonto'],

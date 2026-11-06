@@ -196,6 +196,34 @@ describe('POST /api/import/articles/execute', () => {
     expect(payload).toMatchObject({ price_excl_vat: 0 })
   })
 
+  it('merge mode: leaves the existing unit untouched even when the file has one', async () => {
+    mockFetchAllRows.mockResolvedValue([{ id: 'x', name: 'Old', article_number: 'A-1', unit: 'st' }])
+    enqueue({ data: { id: 'x', name: 'New name', article_number: 'A-1' } })
+
+    await POST(makeRequest({
+      rows: [row({ article_number: 'A-1', name: 'New name', unit: 'tim' })],
+      update_duplicates: true,
+    }))
+
+    const [payload] = findCall('articles', 'update') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ name: 'New name' })
+    expect(payload).not.toHaveProperty('unit')
+  })
+
+  it('a "-" unit cell imports a new article without a unit', async () => {
+    const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Enhet', 'Pris'], ['Ny', '-', '10']])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Artiklar')
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const parsed = parseArticlesFile(buf, 'u.xlsx').rows[0]
+    enqueue({ data: { id: 'n1', name: 'Ny', article_number: null } })
+
+    await POST(makeRequest({ rows: [parsed], update_duplicates: false }))
+
+    const [payload] = findCall('articles', 'insert') as Record<string, unknown>[]
+    expect(payload).toMatchObject({ name: 'Ny', unit: null })
+  })
+
   describe('parser output fed into merge mode', () => {
     function parseOne(priceCell: string) {
       const ws = XLSX.utils.aoa_to_sheet([['Benämning', 'Artikelnummer', 'Pris'], ['Old', 'A-1', priceCell]])

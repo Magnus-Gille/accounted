@@ -5,7 +5,7 @@ import { cellOrNull } from '../shared/column-utils'
 import { readBestSheet } from '../shared/workbook-reader'
 import type { DetectedArticleColumns, ParsedArticleRow } from './types'
 import { ARTICLE_ERR } from './validation-messages'
-import { parseStrictAmount } from './strict-amount'
+import { isPlaceholderCell, parseStrictAmount } from './strict-amount'
 import { deductionTypeForWorkType, normalizeHouseworkType } from '@/lib/invoices/rot-rut-rules'
 
 const VALID_VAT_RATES = [0, 6, 12, 25] as const
@@ -166,8 +166,8 @@ export function parseArticlesFile(
     const nameEn = cell(row, columns.name_en_col)
     const type = normalizeArticleType(cell(row, columns.type_col))
     const unitRaw = cell(row, columns.unit_col)
-    // Absent unit stays null ("not specified"), never a hidden 'st'.
-    const unit = unitRaw
+    // Absent or placeholder unit stays null ("not specified"), never a hidden 'st'.
+    const unit = isPlaceholderCell(unitRaw) ? null : unitRaw
 
     const priceRaw = cell(row, columns.price_col)
     const {

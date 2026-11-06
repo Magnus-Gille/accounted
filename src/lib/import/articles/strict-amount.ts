@@ -5,6 +5,11 @@
  */
 
 const PLACEHOLDER_RE = /^[-\u2013\u2014]$/
+
+/** A lone -, en dash or em dash cell means "not specified" in article files. */
+export function isPlaceholderCell(raw: string | null): boolean {
+  return raw != null && PLACEHOLDER_RE.test(raw.trim())
+}
 // Space, nbsp and narrow nbsp are the only accepted thousands separators
 // between spaces; tabs and newlines are never part of a number.
 const SPACE_GROUPED_RE = /^[-+]?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?$/
