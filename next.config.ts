@@ -78,6 +78,20 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_ID: process.env.VERCEL_GIT_COMMIT_SHA ?? '',
   },
+  // Generic Docker image only (the builder stage sets the flag). Its client
+  // chunks embed NEXT_PUBLIC_* sentinels that docker-entrypoint.sh rewrites in
+  // place at container start, so a chunk keeps its content-hashed filename while
+  // its content changes with the env (a rotated anon key). `/_next/static` is
+  // served immutable, so browsers that already hold the chunk never refetch it
+  // and keep sending the old key. A runtime deployment id makes Next append
+  // `?dpl=<id>` to every asset URL; the entrypoint derives the id from the
+  // substituted values, so a changed key is a changed URL. The sentinel is
+  // substituted by the entrypoint in prerendered output; dynamic renders read
+  // the real id from process.env.NEXT_DEPLOYMENT_ID at runtime. Vercel and
+  // local builds keep their own deployment handling.
+  ...(process.env.ACCOUNTED_RUNTIME_DEPLOYMENT_ID === "1"
+    ? { deploymentId: "__NEXT_PUBLIC_DEPLOYMENT_ID__" }
+    : {}),
   // The build type-checks what ships: tsconfig.build.json extends
   // tsconfig.json and excludes tests. tsconfig.json stays the editor/ESLint
   // view of the whole repo. Next 16.3's default CLI checker checks the complete
@@ -129,6 +143,11 @@ const nextConfig: NextConfig = {
     // - static-generation phase: cap prerender workers (default is cores-1;
     //   each is a full Node process on the shared container RAM).
     cpus: 2,
+    // Docker image only, see deploymentId above: the server takes the id from
+    // process.env.NEXT_DEPLOYMENT_ID at request time instead of the build.
+    ...(process.env.ACCOUNTED_RUNTIME_DEPLOYMENT_ID === "1"
+      ? { runtimeServerDeploymentId: true }
+      : {}),
   },
   // PostHog reverse proxy. Keeping analytics same-origin buys three things:
   // the strict CSP needs NO posthog hosts (`connect-src 'self'` already

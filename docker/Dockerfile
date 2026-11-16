@@ -49,6 +49,11 @@ ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=__NEXT_PUBLIC_TURNSTILE_SITE_KEY__
 # docker-entrypoint.sh can substitute the runtime value into public/sw.js.
 ENV NEXT_PUBLIC_BRANDING_APP_NAME=__NEXT_PUBLIC_BRANDING_APP_NAME__
 
+# Make asset URLs carry a deployment id that docker-entrypoint.sh derives from
+# the runtime values at container start (see next.config.ts), so rotating a
+# NEXT_PUBLIC_* value invalidates the immutable-cached client chunks.
+ENV ACCOUNTED_RUNTIME_DEPLOYMENT_ID=1
+
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # `next build` type-checks the whole production project (tsconfig.build.json)
