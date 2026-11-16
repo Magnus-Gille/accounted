@@ -123,6 +123,25 @@ if [ -n "$SUBST_PATHS" ]; then
   E_TURNSTILE_SITE_KEY=$(sed_esc "${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}")
   E_BRANDING_APP_NAME=$(sed_esc "${NEXT_PUBLIC_BRANDING_APP_NAME:-Gnubok}")
 
+  # Runtime deployment id. This rewrite changes client chunks in place, so a
+  # chunk keeps its content-hashed filename while its content (e.g. the anon
+  # key) changes with the env. /_next/static is served immutable, so a browser
+  # holding the old chunk would never refetch it. Next appends
+  # ?dpl=<deployment id> to every asset URL; deriving the id from everything
+  # substituted turns a rotated value into a new URL. The build bakes the
+  # sentinel into prerendered HTML/RSC/manifests (substituted below) and the
+  # server reads NEXT_DEPLOYMENT_ID at request time, so both agree. Only a hash
+  # is used, so no value is exposed; 16 hex chars fit Next's id charset. It
+  # must be exported before the final exec.
+  deployment_inputs=$(cat /app/.next/BUILD_ID 2>/dev/null || true)
+  for var in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_WS_URL NEXT_PUBLIC_SUPABASE_ANON_KEY NEXT_PUBLIC_APP_URL NEXT_PUBLIC_VAPID_PUBLIC_KEY NEXT_PUBLIC_SELF_HOSTED NEXT_PUBLIC_REQUIRE_MFA NEXT_PUBLIC_SESSION_IDLE_TIMEOUT_MS NEXT_PUBLIC_SESSION_ABSOLUTE_TIMEOUT_MS NEXT_PUBLIC_SESSION_WARNING_MS NEXT_PUBLIC_SESSION_TIMEOUT_FORCE_ALL NEXT_PUBLIC_TURNSTILE_SITE_KEY NEXT_PUBLIC_BRANDING_APP_NAME; do
+    eval val=\${$var:-}
+    deployment_inputs="$deployment_inputs
+$var=$val"
+  done
+  NEXT_DEPLOYMENT_ID=$(printf %s "$deployment_inputs" | sha256sum | cut -c1-16)
+  export NEXT_DEPLOYMENT_ID
+
   # File-type coverage:
   #   *.js: client + server bundles
   #   *.json: routes-manifest.json (CSP/headers), build-manifest.json, etc.
@@ -147,7 +166,8 @@ if [ -n "$SUBST_PATHS" ]; then
         -e "s|__NEXT_PUBLIC_SESSION_WARNING_MS__|${E_SESSION_WARNING_MS}|g" \
         -e "s|__NEXT_PUBLIC_SESSION_TIMEOUT_FORCE_ALL__|${E_SESSION_TIMEOUT_FORCE_ALL}|g" \
         -e "s|__NEXT_PUBLIC_TURNSTILE_SITE_KEY__|${E_TURNSTILE_SITE_KEY}|g" \
-        -e "s|__NEXT_PUBLIC_BRANDING_APP_NAME__|${E_BRANDING_APP_NAME}|g"
+        -e "s|__NEXT_PUBLIC_BRANDING_APP_NAME__|${E_BRANDING_APP_NAME}|g" \
+        -e "s|__NEXT_PUBLIC_DEPLOYMENT_ID__|${NEXT_DEPLOYMENT_ID}|g"
 fi
 
 # ─── Make the served bundle immutable (defense in depth) ───

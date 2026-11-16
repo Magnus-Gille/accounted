@@ -212,6 +212,112 @@ describe('docker/docker-entrypoint.sh: populating /app/.next', () => {
   })
 })
 
+/**
+ * GRIM-243: the entrypoint rewrites NEXT_PUBLIC_* sentinels inside chunks that
+ * keep their content-hashed filenames, and /_next/static is served immutable,
+ * so a rotated anon key never reached browsers that had cached the chunk. The
+ * fix is a runtime deployment id: Next appends ?dpl=<id> to every asset URL and
+ * the entrypoint derives the id from the substituted values.
+ */
+describe('docker/docker-entrypoint.sh: runtime deployment id', () => {
+  let root = ''
+
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true })
+    root = ''
+  })
+
+  function substituteSection(base: string): string {
+    const src = read('docker/docker-entrypoint.sh')
+    const start = src.indexOf('# ─── Replace build-time placeholder')
+    const end = src.indexOf('# ─── Make the served bundle immutable')
+    expect(start, 'replace header not found').toBeGreaterThan(-1)
+    expect(end, 'immutable header not found').toBeGreaterThan(start)
+    return (
+      'set -e\n' +
+      src
+        .slice(start, end)
+        .replace(/(?<![\w.])\/app\//g, `${base}/app/`) +
+      'printf %s "$NEXT_DEPLOYMENT_ID"\n'
+    )
+  }
+
+  /** Builds a template with sentinels, runs the substitution, returns the id and the output. */
+  function runWith(anonKey: string, overrides: Record<string, string> = {}) {
+    root = mkdtempSync(path.join(tmpdir(), 'accounted-deploy-id-'))
+    const next = path.join(root, 'app/.next')
+    mkdirSync(path.join(next, 'static/chunks'), { recursive: true })
+    mkdirSync(path.join(next, 'server/app'), { recursive: true })
+    mkdirSync(path.join(root, 'app/public'), { recursive: true })
+    writeFileSync(path.join(next, 'BUILD_ID'), 'build-1\n')
+    writeFileSync(
+      path.join(next, 'static/chunks/09c7255uwnseb.js'),
+      'const k="__NEXT_PUBLIC_SUPABASE_ANON_KEY__"',
+    )
+    writeFileSync(
+      path.join(next, 'server/app/login.html'),
+      '<html data-dpl-id="__NEXT_PUBLIC_DEPLOYMENT_ID__"><script src="/_next/static/chunks/09c7255uwnseb.js?dpl=__NEXT_PUBLIC_DEPLOYMENT_ID__">',
+    )
+    const script = path.join(root, 'substitute.sh')
+    writeFileSync(script, substituteSection(root))
+    // bash, not dash: the image's busybox ash has the ${v//x/y} expansion sed_esc uses.
+    const id = execFileSync('bash', [script], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://db.example.test',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
+        NEXT_PUBLIC_APP_URL: 'https://app.example.test',
+        ...overrides,
+      },
+      stdio: 'pipe',
+    }).toString()
+    return {
+      id,
+      chunk: readFileSync(path.join(next, 'static/chunks/09c7255uwnseb.js'), 'utf8'),
+      html: readFileSync(path.join(next, 'server/app/login.html'), 'utf8'),
+    }
+  }
+
+  it('gives a rotated anon key a new asset URL, so the immutable cached chunk is refetched', () => {
+    const before = runWith('anon-key-old')
+    const after = runWith('anon-key-new')
+
+    expect(before.chunk).toBe('const k="anon-key-old"')
+    expect(after.chunk).toBe('const k="anon-key-new"')
+    expect(before.id).toMatch(/^[0-9a-f]{16}$/)
+    expect(after.id).toMatch(/^[0-9a-f]{16}$/)
+    expect(after.id).not.toBe(before.id)
+    expect(before.html).toContain(`?dpl=${before.id}"`)
+    expect(after.html).toContain(`?dpl=${after.id}"`)
+    expect(after.html).not.toContain('__NEXT_PUBLIC_')
+  })
+
+  it('keeps the id stable across restarts with unchanged values', () => {
+    expect(runWith('same-key').id).toBe(runWith('same-key').id)
+  })
+
+  it('changes the id for any substituted value, not only the anon key', () => {
+    expect(runWith('k', { NEXT_PUBLIC_APP_URL: 'https://other.example.test' }).id).not.toBe(
+      runWith('k').id,
+    )
+  })
+
+  it('does not put a key into the id or the URL', () => {
+    const { id, html } = runWith('super-secret-anon-key')
+    expect(id).not.toContain('super-secret')
+    expect(html).not.toContain('super-secret')
+  })
+
+  it('is enabled only by the Docker builder stage, with the sentinel the entrypoint substitutes', () => {
+    const dockerfile = read('docker/Dockerfile')
+    expect(dockerfile).toMatch(/^ENV ACCOUNTED_RUNTIME_DEPLOYMENT_ID=1$/m)
+    const config = read('next.config.ts')
+    expect(config).toContain('process.env.ACCOUNTED_RUNTIME_DEPLOYMENT_ID === "1"')
+    expect(config).toContain('deploymentId: "__NEXT_PUBLIC_DEPLOYMENT_ID__"')
+    expect(config).toContain('runtimeServerDeploymentId: true')
+  })
+})
+
 describe('docker-publish.yml: the boot smoke test gates `latest`', () => {
   type Step = { name?: string; run?: string; uses?: string; id?: string }
   const workflow = yaml.load(read('.github/workflows/docker-publish.yml')) as {
